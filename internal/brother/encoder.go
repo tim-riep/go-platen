@@ -26,20 +26,45 @@ const Name = "brother-raster"
 var Factory = raster.NewFactoryWithDefaults(Name, func() raster.Encoder { return &Encoder{} },
 	map[string]string{"dither": string(render.Halftone)})
 
-// Page geometry (docs/brother-raster-format.md, sections 2.3 and 3).
-const (
-	DPI = 600
-	// PageRows is the number of rows per A4 page.
-	PageRows = 6816
+// Format is the page geometry for one paper size and resolution, as
+// measured in the captures (docs/brother-raster-format.md, section 2.3).
+type Format struct {
+	Paper string
+	DPI   int
+	// PageSizeCode is the value of the PCL page size command ESC&l#A.
+	PageSizeCode int
+	// Rows is the number of raster rows per page.
+	Rows int
+	// RowBytes is the row length; only bytes DataFirst to DataEnd-1 carry
+	// data, the driver never writes the others.
+	RowBytes, DataFirst, DataEnd int
 	// OriginX and OriginY locate raster pixel (0, 0) on the paper bitmap.
-	OriginX = 76
-	OriginY = 100
-	// RowBytes is the row length. Only bytes DataFirst to DataEnd-1 carry
-	// data; the driver never writes the others (section 2.3).
-	RowBytes  = 600
-	DataFirst = 2
-	DataEnd   = 598
-)
+	OriginX, OriginY int
+}
+
+// Formats lists the paper sizes and resolutions covered by captures.
+var Formats = []Format{
+	{Paper: "A4", DPI: 300, PageSizeCode: 26, Rows: 3408, RowBytes: 300, DataFirst: 1, DataEnd: 299, OriginX: 40, OriginY: 50},
+	{Paper: "A4", DPI: 600, PageSizeCode: 26, Rows: 6816, RowBytes: 600, DataFirst: 2, DataEnd: 598, OriginX: 80, OriginY: 100},
+	{Paper: "A4", DPI: 1200, PageSizeCode: 26, Rows: 13631, RowBytes: 1200, DataFirst: 5, DataEnd: 1196, OriginX: 160, OriginY: 200},
+	{Paper: "Letter", DPI: 600, PageSizeCode: 2, Rows: 6400, RowBytes: 617, DataFirst: 2, DataEnd: 615, OriginX: 80, OriginY: 100},
+	{Paper: "A5", DPI: 600, PageSizeCode: 25, Rows: 4761, RowBytes: 417, DataFirst: 2, DataEnd: 415, OriginX: 80, OriginY: 100},
+}
+
+// FormatFor returns the format for a paper size and resolution.
+func FormatFor(paper string, dpi int) (Format, error) {
+	for _, f := range Formats {
+		if strings.EqualFold(f.Paper, paper) && f.DPI == dpi {
+			return f, nil
+		}
+	}
+	var have []string
+	for _, f := range Formats {
+		have = append(have, fmt.Sprintf("%s at %d dpi", f.Paper, f.DPI))
+	}
+	return Format{}, fmt.Errorf("%w: %s at %d dpi is not supported (supported: %s; see docs/brother-raster-format.md)",
+		errUnsupported, paper, dpi, strings.Join(have, ", "))
+}
 
 // Segmentation limits (section 3).
 const (
@@ -57,16 +82,27 @@ const (
 
 const uel = "\x1b%-12345X"
 
-// Page setup sequences (section 1.2).
-const (
-	firstPageSetup = "\x1b&u600D\x1b*t600R\x1b&n8WdRegular\x1b&l1h1001H\x1b&l0S\x1b&l1X"
-	pageSetup      = "\x1b&l0O\x1b&l4096A\x1b&l26a6d1E\x1b&l0U\x1b&l0Z\x1b*p0X\x1b*p0Y\x1b*b1030M"
-)
+// Paper sources (printer option "source") and their PCL commands
+// (section 1.2). "tray" is what the HL-2135W driver sent in the first
+// captures and what the test prints used.
+var sources = map[string]string{
+	"tray":   "\x1b&l1h1001H",
+	"auto":   "\x1b&l7H",
+	"manual": "\x1b&l2H",
+}
+
+// Media types (printer option "media"): PJL value and PCL media name.
+var media = map[string][2]string{
+	"plain": {"REGULAR", "Regular"},
+	"thick": {"THICK", "Thick"},
+}
 
 // Encoder implements raster.Encoder.
 type Encoder struct {
+	f       Format
 	jobName string
 	pages   int
+	setup   string
 	seed    []byte
 	row     []byte
 	w       *bufio.Writer
@@ -74,22 +110,52 @@ type Encoder struct {
 
 var errUnsupported = errors.New("brother-raster")
 
+func option(opts map[string]string, key, def string, allowed ...string) (string, error) {
+	v := strings.ToLower(strings.TrimSpace(opts[key]))
+	if v == "" {
+		return def, nil
+	}
+	for _, a := range allowed {
+		if v == a {
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf("%w: option %s must be one of %s, not %q", errUnsupported, key, strings.Join(allowed, ", "), v)
+}
+
 // Begin validates the job and writes the PJL header.
 func (e *Encoder) Begin(out io.Writer, job raster.Job) error {
-	if !strings.EqualFold(job.Paper.Name, "A4") {
-		return fmt.Errorf("%w: only A4 paper is supported, not %s (see docs/brother-raster-format.md)", errUnsupported, job.Paper.Name)
+	dpi := job.ResolutionDPI
+	if dpi == 0 {
+		dpi = 600
 	}
-	if job.ResolutionDPI != 0 && job.ResolutionDPI != DPI {
-		return fmt.Errorf("%w: only %d dpi is supported, not %d", errUnsupported, DPI, job.ResolutionDPI)
+	f, err := FormatFor(job.Paper.Name, dpi)
+	if err != nil {
+		return err
 	}
+	source, err := option(job.Options, "source", "tray", "tray", "auto", "manual")
+	if err != nil {
+		return err
+	}
+	mediaType, err := option(job.Options, "media", "plain", "plain", "thick")
+	if err != nil {
+		return err
+	}
+	tonerSave, err := option(job.Options, "toner_save", "off", "off", "on")
+	if err != nil {
+		return err
+	}
+	m := media[mediaType]
+	e.f = f
+	e.setup = fmt.Sprintf("\x1b&u%dD\x1b*t%dR\x1b&n%dWd%s%s\x1b&l0S\x1b&l1X", dpi, dpi, len(m[1])+1, m[1], sources[source])
 	e.jobName = jobName(job.Title, job.JobID)
 	e.w = bufio.NewWriterSize(out, 64<<10)
-	e.seed = make([]byte, RowBytes)
-	e.row = make([]byte, RowBytes)
+	e.seed = make([]byte, f.RowBytes)
+	e.row = make([]byte, f.RowBytes)
 	fmt.Fprintf(e.w, "%s@PJL \n@PJL SET REPRINT=OFF\n@PJL SET HOLD=OFF\n@PJL SET USERNAME=\"\"\r\n", uel)
 	fmt.Fprintf(e.w, "@PJL SET JOBNAME=\"%s\"\r\n@PJL JOB NAME=\"%s\"\r\n", e.jobName, e.jobName)
-	io.WriteString(e.w, "@PJL SET STRINGCODESET=HPROMAN8\n@PJL SET ECONOMODE=OFF\n@PJL SET MEDIATYPE=REGULAR\n")
-	io.WriteString(e.w, "@PJL SET RESOLUTION=600\n@PJL ENTER LANGUAGE=PCL\n")
+	fmt.Fprintf(e.w, "@PJL SET STRINGCODESET=HPROMAN8\n@PJL SET ECONOMODE=%s\n@PJL SET MEDIATYPE=%s\n", strings.ToUpper(tonerSave), m[0])
+	fmt.Fprintf(e.w, "@PJL SET RESOLUTION=%d\n@PJL ENTER LANGUAGE=PCL\n", dpi)
 	return e.w.Flush()
 }
 
@@ -110,27 +176,28 @@ func jobName(title, id string) string {
 	return "platen " + id
 }
 
-// Page writes one page. The bitmap is the whole sheet at 600 dpi; the part
-// inside the printable area is sent.
+// Page writes one page. The bitmap is the whole sheet at the job's
+// resolution; the part inside the printable area is sent.
 func (e *Encoder) Page(out io.Writer, bm *render.Bitmap) error {
-	if bm.DPI != DPI {
-		return fmt.Errorf("%w: bitmap has %d dpi, want %d", errUnsupported, bm.DPI, DPI)
+	f := e.f
+	if bm.DPI != f.DPI {
+		return fmt.Errorf("%w: bitmap has %d dpi, want %d", errUnsupported, bm.DPI, f.DPI)
 	}
 	if e.pages == 0 {
-		io.WriteString(e.w, firstPageSetup)
+		io.WriteString(e.w, e.setup)
 	}
-	io.WriteString(e.w, pageSetup)
+	fmt.Fprintf(e.w, "\x1b&l0O\x1b&l4096A\x1b&l%da6d1E\x1b&l0U\x1b&l0Z\x1b*p0X\x1b*p0Y\x1b*b1030M", f.PageSizeCode)
 	e.pages++
 
-	rows := make([][]byte, PageRows)
+	rows := make([][]byte, f.Rows)
 	for y := range rows {
-		extractRow(e.row, bm, OriginY+y, OriginX)
-		clear(e.row[:DataFirst])
-		clear(e.row[DataEnd:])
+		extractRow(e.row, bm, f.OriginY+y, f.OriginX)
+		clear(e.row[:f.DataFirst])
+		clear(e.row[f.DataEnd:])
 		if y%bandRows == 0 {
 			// The first row of a band rewrites the whole data area
 			// (section 2.2).
-			rows[y] = EncodeBandStart(nil, e.row)
+			rows[y] = EncodeBandStart(nil, e.row, f.DataFirst, f.DataEnd)
 		} else {
 			rows[y] = EncodeRow(nil, e.seed, e.row)
 		}
@@ -151,7 +218,7 @@ func (e *Encoder) End(out io.Writer) error {
 	return e.w.Flush()
 }
 
-// extractRow copies RowBytes bytes of bitmap row y starting at pixel x0
+// extractRow copies len(dst) bytes of bitmap row y starting at pixel x0
 // into dst. Pixels outside the bitmap are white.
 func extractRow(dst []byte, bm *render.Bitmap, y, x0 int) {
 	clear(dst)
@@ -193,15 +260,16 @@ type edit struct {
 }
 
 // EncodeBandStart appends the encoding of the first row of a band to dst:
-// a blank row, or edits that write every byte of the data area, so that the
-// result does not depend on the printer's seed row.
-func EncodeBandStart(dst, row []byte) []byte {
+// a blank row, or edits that write every byte of the data area (bytes
+// first to end-1), so that the result does not depend on the printer's
+// seed row.
+func EncodeBandStart(dst, row []byte, first, end int) []byte {
 	if allZero(row) {
 		return append(dst, blankRow)
 	}
 	// A pseudo seed that differs from row in every data byte.
 	seed := make([]byte, len(row))
-	for i := DataFirst; i < DataEnd && i < len(row); i++ {
+	for i := first; i < end && i < len(row); i++ {
 		seed[i] = ^row[i]
 	}
 	return EncodeRow(dst, seed, row)
@@ -212,12 +280,15 @@ func EncodeRow(dst, seed, row []byte) []byte {
 	if allZero(row) {
 		return append(dst, blankRow)
 	}
-	edits := diffEdits(seed, row, 3, false)
+	edits := diffEdits(seed, row)
 	if len(edits) > maxEdits {
-		edits = diffEdits(seed, row, 8, true)
-	}
-	if len(edits) > maxEdits {
-		edits = singleEdit(seed, row)
+		// As the driver does: the last edit is a literal that covers
+		// everything up to the end of the last change (section 2.2).
+		last := edits[len(edits)-1]
+		end := last.start + last.cnt
+		cut := edits[maxEdits-1]
+		cut.run, cut.cnt = false, end-cut.start
+		edits = append(edits[:maxEdits-1], cut)
 	}
 	if len(edits) == 0 {
 		return append(dst, repeatRow)
@@ -256,10 +327,12 @@ func appendExtension(dst []byte, v, fieldMax int) []byte {
 	return append(dst, byte(rem))
 }
 
+// minRun is the shortest stretch of equal bytes sent as a repeated byte.
+const minRun = 3
+
 // diffEdits finds the changed byte ranges and splits them into runs of at
-// least minRun equal bytes and literal stretches. With merge set, all bytes
-// between the first and the last change form one range.
-func diffEdits(seed, row []byte, minRun int, merge bool) []edit {
+// least minRun equal bytes and literal stretches.
+func diffEdits(seed, row []byte) []edit {
 	var ranges [][2]int
 	for i := 0; i < len(row); {
 		if row[i] == seed[i] {
@@ -275,9 +348,6 @@ func diffEdits(seed, row []byte, minRun int, merge bool) []edit {
 	}
 	if len(ranges) == 0 {
 		return nil
-	}
-	if merge {
-		ranges = [][2]int{{ranges[0][0], ranges[len(ranges)-1][1]}}
 	}
 	var edits []edit
 	pos := 0
@@ -306,21 +376,6 @@ func diffEdits(seed, row []byte, minRun int, merge bool) []edit {
 		}
 	}
 	return edits
-}
-
-// singleEdit replaces everything from the first to the last change with one
-// literal edit.
-func singleEdit(seed, row []byte) []edit {
-	first, last := -1, -1
-	for i := range row {
-		if row[i] != seed[i] {
-			if first < 0 {
-				first = i
-			}
-			last = i
-		}
-	}
-	return []edit{{off: first, cnt: last - first + 1, start: first}}
 }
 
 func allZero(b []byte) bool {

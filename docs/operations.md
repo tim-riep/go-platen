@@ -136,10 +136,14 @@ Set with `-option key=value` on `printer create`/`update`:
 | `pdf-to-raster`, `brother-raster` | `dither` | `threshold`, `halftone`, `floyd-steinberg`; default `halftone` for `brother-raster`, `threshold` for `pdf-to-raster` |
 | | `threshold` | `1`–`255` (default `128`) |
 | | `rotate` | `auto` (default), `none` |
+| `brother-raster` | `source` | `tray` (default), `auto`, `manual` (manual feed slot) |
+| | `media` | `plain` (default), `thick` |
+| | `toner_save` | `off` (default), `on` |
 
-`brother-raster` supports A4 paper at 600 dpi only (`-paper A4 -dpi 600`);
-see [brother-raster-format.md](brother-raster-format.md) for what the
-captures cover.
+`brother-raster` supports A4 at 300, 600 and 1200 dpi (`-dpi 1200` is the
+driver's "HQ 1200") and Letter and A5 at 600 dpi. See
+[brother-raster-format.md](brother-raster-format.md) for what the captures
+cover.
 
 ## Monitoring and logs
 

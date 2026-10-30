@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math/bits"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -71,6 +73,9 @@ func TestEncodeRowRoundTrip(t *testing.T) {
 		if enc[0] != blankRow && int(enc[0]) > maxEdits {
 			t.Fatalf("%d edits", enc[0])
 		}
+		if enc[0] != blankRow && len(diffEdits(seed, row)) > maxEdits && enc[0] != maxEdits {
+			t.Fatalf("over-full row encoded with %d edits, want %d", enc[0], maxEdits)
+		}
 		if got := decodeOne(t, seed, enc); !bytes.Equal(got, row) {
 			t.Fatalf("iteration %d: round trip mismatch", i)
 		}
@@ -105,11 +110,41 @@ func TestDocumentedExample(t *testing.T) {
 	}
 }
 
-func encodePages(t *testing.T, title string, pages []*render.Bitmap) []byte {
+// a4 is the format most tests use; the names below keep them short.
+var a4 = func() Format {
+	f, err := FormatFor("A4", 600)
+	if err != nil {
+		panic(err)
+	}
+	return f
+}()
+
+const DPI = 600
+
+var (
+	RowBytes  = a4.RowBytes
+	DataFirst = a4.DataFirst
+	DataEnd   = a4.DataEnd
+	OriginX   = a4.OriginX
+	OriginY   = a4.OriginY
+)
+
+func paperFor(t *testing.T, f Format) render.Paper {
+	t.Helper()
+	p, err := render.ParsePaper(f.Paper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func mustA4(t *testing.T) render.Paper { return paperFor(t, a4) }
+
+func encodeJob(t *testing.T, f Format, opts map[string]string, title string, pages []*render.Bitmap) []byte {
 	t.Helper()
 	var out bytes.Buffer
 	e := &Encoder{}
-	job := raster.Job{JobOptions: backend.JobOptions{Title: title, ResolutionDPI: DPI}, Paper: mustA4(t)}
+	job := raster.Job{JobOptions: backend.JobOptions{Title: title, ResolutionDPI: f.DPI, Options: opts}, Paper: paperFor(t, f)}
 	if err := e.Begin(&out, job); err != nil {
 		t.Fatal(err)
 	}
@@ -124,22 +159,25 @@ func encodePages(t *testing.T, title string, pages []*render.Bitmap) []byte {
 	return out.Bytes()
 }
 
-func mustA4(t *testing.T) render.Paper {
-	p, err := render.ParsePaper("A4")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return p
+func encodePages(t *testing.T, title string, pages []*render.Bitmap) []byte {
+	t.Helper()
+	return encodeJob(t, a4, nil, title, pages)
 }
 
-// sheet places decoded raster rows on an A4 bitmap at the raster origin.
-func sheet(t *testing.T, rows [][]byte) *render.Bitmap {
-	w, h := mustA4(t).Pixels(DPI)
-	bm := render.NewBitmap(w, h, DPI)
+// sheet places decoded raster rows on a sheet of the format's paper size at
+// the raster origin.
+func sheet(t *testing.T, f Format, rows [][]byte) *render.Bitmap {
+	w, h := paperFor(t, f).Pixels(f.DPI)
+	bm := render.NewBitmap(w, h, f.DPI)
 	for y, r := range rows {
-		for x := 0; x < len(r)*8; x++ {
-			if r[x/8]&(0x80>>(x%8)) != 0 && OriginX+x < w {
-				bm.Set(OriginX+x, OriginY+y)
+		for i, v := range r {
+			for v != 0 {
+				b := bits.LeadingZeros8(v)
+				v &^= 0x80 >> b
+				x := i*8 + b
+				if f.OriginX+x < w && f.OriginY+y < h {
+					bm.Set(f.OriginX+x, f.OriginY+y)
+				}
 			}
 		}
 	}
@@ -155,7 +193,7 @@ func commandStrings(cmds []inspect.Command) []string {
 }
 
 // checkStructure verifies the documented structure of an encoded stream.
-func checkStructure(t *testing.T, s *inspect.Stream) {
+func checkStructure(t *testing.T, s *inspect.Stream, f Format) {
 	t.Helper()
 	if s.UELs != 3 {
 		t.Errorf("%d UELs", s.UELs)
@@ -171,7 +209,7 @@ func checkStructure(t *testing.T, s *inspect.Stream) {
 			}
 			total += sg.Rows
 			blank := len(sg.Data) == sg.Rows+2 && bytes.Count(sg.Data[2:], []byte{blankRow}) == sg.Rows
-			if sg.Rows < 1 || sg.Rows > maxBlankRows || (!blank && sg.Rows > maxEditRows) || len(sg.Data) > maxSegmentSize+RowBytes*2 {
+			if sg.Rows < 1 || sg.Rows > maxBlankRows || (!blank && sg.Rows > maxEditRows) || len(sg.Data) > maxSegmentSize+f.RowBytes*2 {
 				t.Errorf("page %d: segment with %d rows and %d bytes (blank only: %v)", n+1, sg.Rows, len(sg.Data), blank)
 			}
 		}
@@ -184,11 +222,47 @@ func checkStructure(t *testing.T, s *inspect.Stream) {
 				}
 			}
 		}
-		if total != PageRows {
-			t.Errorf("page %d: %d rows", n+1, total)
+		if total != f.Rows {
+			t.Errorf("page %d: %d rows, want %d", n+1, total, f.Rows)
 		}
 	}
 }
+
+// captureJob derives the format and the printer options of a captured job.
+func captureJob(t *testing.T, s *inspect.Stream) (Format, map[string]string) {
+	t.Helper()
+	dpi, code := 0, 0
+	opts := map[string]string{}
+	for _, c := range s.Pages[0].Commands {
+		switch {
+		case c.Is('&', 'u', 'D'):
+			dpi = c.Int()
+		case c.Is('&', 'l', 'A') && c.Int() != 4096:
+			code = c.Int()
+		case c.Is('&', 'l', 'H') && c.Int() == 7:
+			opts["source"] = "auto"
+		case c.Is('&', 'l', 'H') && c.Int() == 2:
+			opts["source"] = "manual"
+		}
+	}
+	for _, l := range s.PJL {
+		if l == "@PJL SET MEDIATYPE=THICK" {
+			opts["media"] = "thick"
+		}
+		if l == "@PJL SET ECONOMODE=ON" {
+			opts["toner_save"] = "on"
+		}
+	}
+	for _, f := range Formats {
+		if f.DPI == dpi && f.PageSizeCode == code {
+			return f, opts
+		}
+	}
+	t.Fatalf("no format for %d dpi, page size %d", dpi, code)
+	return Format{}, nil
+}
+
+var copiesCommand = regexp.MustCompile(`^ESC &l\d+X$`)
 
 func TestCaptures(t *testing.T) {
 	dirs, _ := filepath.Glob("../../testdata/captures/*/capture.prn")
@@ -205,23 +279,24 @@ func TestCaptures(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			f, opts := captureJob(t, capture)
 			var sheets []*render.Bitmap
 			var captured [][][]byte
 			for _, p := range capture.Pages {
-				rows, _, err := inspect.DecodeRows(p, RowBytes)
+				rows, _, err := inspect.DecodeRows(p, f.RowBytes)
 				if err != nil {
 					t.Fatal(err)
 				}
 				captured = append(captured, rows)
-				sheets = append(sheets, sheet(t, rows))
+				sheets = append(sheets, sheet(t, f, rows))
 			}
 
-			enc := encodePages(t, "test", sheets)
+			enc := encodeJob(t, f, opts, "test", sheets)
 			got, err := inspect.Parse(enc)
 			if err != nil {
 				t.Fatal(err)
 			}
-			checkStructure(t, got)
+			checkStructure(t, got, f)
 
 			// PJL: the same commands except the job log and the job name.
 			filter := func(lines []string) []string {
@@ -246,10 +321,18 @@ func TestCaptures(t *testing.T) {
 			}
 			encSize, capSize := 0, 0
 			for n := range got.Pages {
-				if a, b := commandStrings(capture.Pages[n].Commands), commandStrings(got.Pages[n].Commands); fmt.Sprint(a) != fmt.Sprint(b) {
-					t.Errorf("page %d commands differ:\ncapture %v\nencoder %v", n+1, a, b)
+				// The driver sends copies as ESC&l#X; platen repeats the
+				// pages instead and always sends ESC&l1X.
+				want := commandStrings(capture.Pages[n].Commands)
+				for i, c := range want {
+					if copiesCommand.MatchString(c) {
+						want[i] = "ESC &l1X"
+					}
 				}
-				rows, _, err := inspect.DecodeRows(got.Pages[n], RowBytes)
+				if b := commandStrings(got.Pages[n].Commands); fmt.Sprint(want) != fmt.Sprint(b) {
+					t.Errorf("page %d commands differ:\ncapture %v\nencoder %v", n+1, want, b)
+				}
+				rows, _, err := inspect.DecodeRows(got.Pages[n], f.RowBytes)
 				if err != nil {
 					t.Fatalf("page %d: %v", n+1, err)
 				}
@@ -265,7 +348,7 @@ func TestCaptures(t *testing.T) {
 					capSize += len(sg.Data)
 				}
 			}
-			t.Logf("raster data: encoder %d bytes, driver %d bytes (%.1f%%)", encSize, capSize, 100*float64(encSize)/float64(capSize))
+			t.Logf("%s at %d dpi: raster data: encoder %d bytes, driver %d bytes (%.1f%%)", f.Paper, f.DPI, encSize, capSize, 100*float64(encSize)/float64(capSize))
 		})
 	}
 }
@@ -287,7 +370,7 @@ func TestBackendRendersPDF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkStructure(t, s)
+	checkStructure(t, s, a4)
 	if len(s.Pages) != 2 {
 		t.Fatalf("%d pages, want 2 copies", len(s.Pages))
 	}
@@ -313,11 +396,20 @@ func TestBackendRendersPDF(t *testing.T) {
 func TestUnsupported(t *testing.T) {
 	e := &Encoder{}
 	letter, _ := render.ParsePaper("Letter")
-	if err := e.Begin(&bytes.Buffer{}, raster.Job{Paper: letter}); err == nil {
-		t.Error("Letter accepted")
+	legal, _ := render.ParsePaper("Legal")
+	if err := e.Begin(&bytes.Buffer{}, raster.Job{Paper: legal}); err == nil {
+		t.Error("Legal accepted")
 	}
-	if err := e.Begin(&bytes.Buffer{}, raster.Job{Paper: mustA4(t), JobOptions: backend.JobOptions{ResolutionDPI: 300}}); err == nil {
-		t.Error("300 dpi accepted")
+	if err := e.Begin(&bytes.Buffer{}, raster.Job{Paper: mustA4(t), JobOptions: backend.JobOptions{ResolutionDPI: 150}}); err == nil {
+		t.Error("150 dpi accepted")
+	}
+	if err := e.Begin(&bytes.Buffer{}, raster.Job{Paper: letter, JobOptions: backend.JobOptions{ResolutionDPI: 300}}); err == nil {
+		t.Error("Letter at 300 dpi accepted")
+	}
+	for _, opts := range []map[string]string{{"source": "tray2"}, {"media": "glossy"}, {"toner_save": "yes"}} {
+		if err := e.Begin(&bytes.Buffer{}, raster.Job{Paper: mustA4(t), JobOptions: backend.JobOptions{ResolutionDPI: 600, Options: opts}}); err == nil {
+			t.Errorf("option %v accepted", opts)
+		}
 	}
 	if got := jobName("", "abc"); got != "platen abc" {
 		t.Error(got)
@@ -350,7 +442,7 @@ func TestRepeatedRowsInShortSegments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkStructure(t, s)
+	checkStructure(t, s, a4)
 	for _, sg := range s.Pages[0].Segments {
 		if bytes.Count(sg.Data[2:], []byte{repeatRow}) > 0 && sg.Rows > maxEditRows {
 			t.Fatalf("segment of %d rows contains repeated rows", sg.Rows)
@@ -383,7 +475,7 @@ func TestBandsAreSelfContained(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkStructure(t, s)
+	checkStructure(t, s, a4)
 	full, _, err := inspect.DecodeRows(s.Pages[0], RowBytes)
 	if err != nil {
 		t.Fatal(err)
@@ -402,7 +494,7 @@ func TestBandsAreSelfContained(t *testing.T) {
 func TestBandStartWritesDataArea(t *testing.T) {
 	row := make([]byte, RowBytes)
 	row[100], row[300] = 0x0f, 0xf0
-	enc := EncodeBandStart(nil, row)
+	enc := EncodeBandStart(nil, row, DataFirst, DataEnd)
 	// Decode it after a row full of ink: the result must still be row,
 	// whatever the seed is.
 	ink := make([]byte, RowBytes)
@@ -425,7 +517,7 @@ func TestBandStartWritesDataArea(t *testing.T) {
 			t.Fatalf("byte %d written: %v", i, written[i])
 		}
 	}
-	if !bytes.Equal(EncodeBandStart(nil, make([]byte, RowBytes)), []byte{blankRow}) {
+	if !bytes.Equal(EncodeBandStart(nil, make([]byte, RowBytes), DataFirst, DataEnd), []byte{blankRow}) {
 		t.Fatal("blank band start")
 	}
 }

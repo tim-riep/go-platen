@@ -161,7 +161,7 @@ backends and to reject documents a printer's backend cannot print.
 | --- | --- | --- |
 | `raw` | anything | the document unchanged, repeated per copy (e.g. ZPL) |
 | `pdf-to-raster` | `application/pdf` | 1-bit bitmaps as PBM (P4) pages |
-| `brother-raster` | `application/pdf` | Brother HL-2135W print data (A4, 600 dpi), see [brother-raster-format.md](brother-raster-format.md) |
+| `brother-raster` | `application/pdf` | Brother HL-2135W print data (A4 at 300/600/1200 dpi, Letter and A5 at 600 dpi), see [brother-raster-format.md](brother-raster-format.md) |
 
 Raster backends share the PDF renderer and differ only in their
 `raster.Encoder`. A printer language that prints bitmaps (e.g. a Brother

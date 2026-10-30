@@ -21,8 +21,9 @@ interface, and workers accept no inbound connections at all.
 - At-least-once delivery with duplicate protection: a local journal on the
   worker and idempotency keys for applications
 - Backends: `raw` (e.g. ZPL), `pdf-to-raster` (PDFium in WebAssembly,
-  threshold or error diffusion) and `brother-raster` (Brother HL-2135W, A4,
-  600 dpi), designed for more printer languages
+  threshold, halftone or error diffusion) and `brother-raster` (Brother
+  HL-2135W: A4 at 300, 600 and 1200 dpi, Letter and A5 at 600 dpi), designed
+  for more printer languages
 - SQLite store (pure Go) behind an interface, documents in a spool directory
 
 ## Architecture
