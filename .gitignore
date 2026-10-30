@@ -4,3 +4,6 @@
 *.db-wal
 *.db-shm
 /tmp/
+# Captured print data is kept locally (third-party documents); see
+# testdata/captures/README.md.
+/testdata/captures/*/
