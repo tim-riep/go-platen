@@ -110,6 +110,19 @@ CREATE INDEX jobs_printer_status ON jobs(printer_id, status);
 CREATE INDEX jobs_status_lease ON jobs(status, lease_expires_at);
 CREATE INDEX jobs_finished ON jobs(finished_at) WHERE finished_at IS NOT NULL;
 `,
+	// 2: users of the web panel, identified by NetBird IPv4 and peer key
+	`
+CREATE TABLE panel_users (
+	ip          TEXT PRIMARY KEY,
+	peer_id     TEXT NOT NULL DEFAULT '',
+	peer_fqdn   TEXT NOT NULL DEFAULT '',
+	name        TEXT NOT NULL DEFAULT '',
+	role        TEXT NOT NULL,
+	created_at  INTEGER NOT NULL,
+	updated_at  INTEGER NOT NULL,
+	last_seen   INTEGER
+);
+`,
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {

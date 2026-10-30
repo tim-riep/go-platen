@@ -113,6 +113,24 @@ func TestCommands(t *testing.T) {
 		t.Fatal(jobs)
 	}
 
+	var pu api.PanelUser
+	run(t, c, "panel-user add 100.64.0.5 -name Laptop -role admin", &pu)
+	if pu.IP != "100.64.0.5" || pu.Role != "admin" || pu.Bound {
+		t.Fatalf("panel user: %+v", pu)
+	}
+	run(t, c, "panel-user add 100.64.0.6", &pu)
+	if pu.Role != "viewer" {
+		t.Fatalf("default role: %+v", pu)
+	}
+	run(t, c, "panel-user update 100.64.0.6 -role admin", &pu)
+	run(t, c, "panel-user reset 100.64.0.5", &pu)
+	run(t, c, "panel-user delete 100.64.0.6", nil)
+	var pus api.List[api.PanelUser]
+	run(t, c, "panel-user list", &pus)
+	if len(pus.Items) != 1 {
+		t.Fatalf("panel users: %+v", pus)
+	}
+
 	run(t, c, "printer delete zebra", nil)
 	run(t, c, "client delete erp", nil)
 	run(t, c, "worker delete site1", nil)

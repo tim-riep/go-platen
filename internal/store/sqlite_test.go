@@ -450,3 +450,50 @@ func TestCancelAndCleanup(t *testing.T) {
 		t.Fatalf("list: %v %v", jobs, err)
 	}
 }
+
+func TestPanelUsers(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	first := &PanelUser{IP: "100.64.0.1", PeerID: "key-a", Role: PanelAdmin, CreatedAt: t0, UpdatedAt: t0}
+	if err := s.ClaimFirstPanelAdmin(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	second := &PanelUser{IP: "100.64.0.2", PeerID: "key-b", Role: PanelAdmin, CreatedAt: t0, UpdatedAt: t0}
+	if err := s.ClaimFirstPanelAdmin(ctx, second); !errors.Is(err, ErrConflict) {
+		t.Fatalf("second claim: %v", err)
+	}
+	viewer := &PanelUser{IP: "100.64.0.3", Role: PanelViewer, Name: "Ops", CreatedAt: t0, UpdatedAt: t0}
+	if err := s.CreatePanelUser(ctx, viewer); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreatePanelUser(ctx, viewer); !errors.Is(err, ErrExists) {
+		t.Fatalf("duplicate: %v", err)
+	}
+	// The only admin can neither be demoted nor deleted.
+	demoted := *first
+	demoted.Role = PanelViewer
+	if err := s.UpdatePanelUser(ctx, &demoted); !errors.Is(err, ErrConflict) {
+		t.Fatalf("demote last admin: %v", err)
+	}
+	if err := s.DeletePanelUser(ctx, first.IP); !errors.Is(err, ErrConflict) {
+		t.Fatalf("delete last admin: %v", err)
+	}
+	got, _ := s.GetPanelUser(ctx, first.IP)
+	if got.Role != PanelAdmin {
+		t.Fatal("rolled back change was applied")
+	}
+	viewer.Role, viewer.PeerID = PanelAdmin, "key-c"
+	if err := s.UpdatePanelUser(ctx, viewer); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeletePanelUser(ctx, first.IP); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.TouchPanelUser(ctx, viewer.IP, t0.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.ListPanelUsers(ctx)
+	if err != nil || len(list) != 1 || list[0].PeerID != "key-c" || list[0].LastSeen == nil || list[0].Name != "Ops" {
+		t.Fatalf("list: %+v %v", list, err)
+	}
+}

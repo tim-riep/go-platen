@@ -88,7 +88,20 @@ type Server struct {
 	NetBird     NetBird     `toml:"netbird"`
 	Server      ServerOpts  `toml:"server"`
 	LocalWorker LocalWorker `toml:"local_worker"`
+	Panel       Panel       `toml:"panel"`
 }
+
+// Panel configures the web panel.
+type Panel struct {
+	// Enabled turns the panel on; it is on unless set to false.
+	Enabled *bool `toml:"enabled"`
+	// AllowedHosts are further host names the panel may be opened by,
+	// besides the server's NetBird name, its short name and its mesh IP.
+	AllowedHosts []string `toml:"allowed_hosts"`
+}
+
+// IsEnabled reports whether the panel is on.
+func (p Panel) IsEnabled() bool { return p.Enabled == nil || *p.Enabled }
 
 // ServerOpts are the server settings.
 type ServerOpts struct {

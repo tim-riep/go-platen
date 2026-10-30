@@ -291,3 +291,42 @@ type AdminJob struct {
 type List[T any] struct {
 	Items []T `json:"items"`
 }
+
+// ---- web panel ----
+
+// PanelUser is a user of the web panel, identified by NetBird IPv4 address
+// and bound to a NetBird peer.
+type PanelUser struct {
+	IP       string `json:"ip"`
+	Name     string `json:"name,omitempty"`
+	Role     string `json:"role"`
+	PeerID   string `json:"peer_id,omitempty"`
+	PeerFQDN string `json:"peer_fqdn,omitempty"`
+	// Bound is false until the user's first visit binds the peer.
+	Bound     bool       `json:"bound"`
+	CreatedAt time.Time  `json:"created_at"`
+	LastSeen  *time.Time `json:"last_seen,omitempty"`
+}
+
+// PanelUserRequest creates or updates a panel user. On update, nil fields
+// are left unchanged.
+type PanelUserRequest struct {
+	IP   string  `json:"ip,omitempty"`
+	Name *string `json:"name,omitempty"`
+	Role *string `json:"role,omitempty"`
+}
+
+// PanelMe describes the panel user making the request.
+type PanelMe struct {
+	PanelUser
+	// FirstAdmin is set when this request made the user the panel's
+	// first admin.
+	FirstAdmin bool   `json:"first_admin,omitempty"`
+	Version    string `json:"version"`
+}
+
+// Backend describes a printer backend.
+type Backend struct {
+	Name         string   `json:"name"`
+	ContentTypes []string `json:"content_types"`
+}

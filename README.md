@@ -74,6 +74,13 @@ curl -X POST "http://platen-server.netbird.cloud/v1/printers/zebra/jobs?title=La
      -H "Idempotency-Key: order-4711" --data-binary @label.zpl
 ```
 
+## Web panel
+
+The server serves a web panel on the same port inside the mesh. The first
+NetBird peer that opens it becomes its admin; further users are added by
+NetBird IPv4 address as admin or viewer and bound to their NetBird peer. See
+[docs/panel.md](docs/panel.md).
+
 ## Container image
 
 `ghcr.io/tim-riep/go-platen` (amd64 and arm64, built `FROM scratch`, non-root,
@@ -105,7 +112,8 @@ metadata, documents as raw request bodies, errors as
 | Health | none | `GET /v1/health` |
 | Application | app token | `GET /v1/printers`, `POST /v1/printers/{id}/jobs`, `GET /v1/jobs/{id}`, `DELETE /v1/jobs/{id}` |
 | Worker | worker credential + NetBird peer | `POST /worker/v1/register`, `GET /worker/v1/config`, `POST /worker/v1/lease`, `GET /worker/v1/jobs/{id}/document`, `POST /worker/v1/jobs/{id}/progress`, `…/complete`, `…/fail`, `POST /worker/v1/heartbeat` |
-| Admin | admin token | workers, enrollment tokens, printers, app clients, jobs under `/admin/v1` |
+| Admin | admin token | workers, enrollment tokens, printers, app clients, jobs, panel users under `/admin/v1` |
+| Web panel | NetBird peer of a panel user | the page at `/` and its API under `/panel/v1` |
 
 ## Development
 

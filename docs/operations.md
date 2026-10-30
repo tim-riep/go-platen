@@ -72,6 +72,8 @@ address. `GET /v1/health` (no authentication) shows whether it is up.
 | `local_worker.name` | `built-in worker` | its display name |
 | `local_worker.journal_dir` | required if enabled | its journal |
 | `local_worker.temp_dir` | system temp dir | its working files |
+| `panel.enabled` | `true` | web panel on the mesh port, see [panel.md](panel.md) |
+| `panel.allowed_hosts` | | further host names the panel may be opened by |
 
 File paths for secrets may contain environment variables, e.g.
 `$CREDENTIALS_DIRECTORY/setup-key` with systemd credentials.

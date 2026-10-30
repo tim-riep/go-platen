@@ -59,6 +59,14 @@ type Options struct {
 	EnrollmentTTL   time.Duration
 	Version         string
 
+	// Panel enables the web panel on the server's port. PanelHosts returns
+	// the host names and addresses the panel may be opened by (the
+	// server's NetBird name and IP); requests for other hosts are refused.
+	Panel      bool
+	PanelHosts func() []string
+	// BackendNames lists the available backends for the panel.
+	BackendNames []string
+
 	// Now returns the current time; tests may override it.
 	Now func() time.Time
 }
@@ -248,6 +256,9 @@ func (s *Server) Handler() http.Handler {
 	s.appRoutes(mux)
 	s.workerRoutes(mux)
 	s.adminRoutes(mux)
+	if s.opts.Panel {
+		s.panelRoutes(mux)
+	}
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, errNotFound("no such endpoint"))

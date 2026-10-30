@@ -871,3 +871,104 @@ func (s *SQLite) DeleteFinishedJobs(ctx context.Context, before time.Time) ([]st
 	})
 	return ids, err
 }
+
+// ---- panel users ----
+
+const panelUserCols = `ip, peer_id, peer_fqdn, name, role, created_at, updated_at, last_seen`
+
+func scanPanelUser(sc scanner) (*PanelUser, error) {
+	var u PanelUser
+	var created, updated int64
+	var seen sql.NullInt64
+	err := sc.Scan(&u.IP, &u.PeerID, &u.PeerFQDN, &u.Name, &u.Role, &created, &updated, &seen)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	u.CreatedAt, u.UpdatedAt, u.LastSeen = fromMS(created), fromMS(updated), fromNullMS(seen)
+	return &u, nil
+}
+
+func (s *SQLite) ListPanelUsers(ctx context.Context) ([]PanelUser, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+panelUserCols+` FROM panel_users ORDER BY ip`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PanelUser
+	for rows.Next() {
+		u, err := scanPanelUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *u)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLite) GetPanelUser(ctx context.Context, ip string) (*PanelUser, error) {
+	return scanPanelUser(s.db.QueryRowContext(ctx, `SELECT `+panelUserCols+` FROM panel_users WHERE ip = ?`, ip))
+}
+
+func insertPanelUser(ctx context.Context, q queryer, u *PanelUser) error {
+	_, err := q.ExecContext(ctx, `INSERT INTO panel_users (`+panelUserCols+`) VALUES (?,?,?,?,?,?,?,?)`,
+		u.IP, u.PeerID, u.PeerFQDN, u.Name, u.Role, ms(u.CreatedAt), ms(u.UpdatedAt), msPtr(u.LastSeen))
+	if isUniqueViolation(err) {
+		return ErrExists
+	}
+	return err
+}
+
+func (s *SQLite) CreatePanelUser(ctx context.Context, u *PanelUser) error {
+	return insertPanelUser(ctx, s.db, u)
+}
+
+func (s *SQLite) ClaimFirstPanelAdmin(ctx context.Context, u *PanelUser) error {
+	return s.tx(ctx, func(tx *sql.Tx) error {
+		var n int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM panel_users`).Scan(&n); err != nil {
+			return err
+		}
+		if n > 0 {
+			return fmt.Errorf("%w: the panel already has users", ErrConflict)
+		}
+		return insertPanelUser(ctx, tx, u)
+	})
+}
+
+// requireAdmin fails with ErrConflict if the panel has no admin left.
+func requireAdmin(ctx context.Context, tx *sql.Tx) error {
+	var n int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM panel_users WHERE role = 'admin'`).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: the panel needs at least one admin", ErrConflict)
+	}
+	return nil
+}
+
+func (s *SQLite) UpdatePanelUser(ctx context.Context, u *PanelUser) error {
+	return s.tx(ctx, func(tx *sql.Tx) error {
+		if err := affected(tx.ExecContext(ctx, `UPDATE panel_users SET peer_id = ?, peer_fqdn = ?, name = ?, role = ?, updated_at = ? WHERE ip = ?`,
+			u.PeerID, u.PeerFQDN, u.Name, u.Role, ms(u.UpdatedAt), u.IP)); err != nil {
+			return err
+		}
+		return requireAdmin(ctx, tx)
+	})
+}
+
+func (s *SQLite) DeletePanelUser(ctx context.Context, ip string) error {
+	return s.tx(ctx, func(tx *sql.Tx) error {
+		if err := affected(tx.ExecContext(ctx, `DELETE FROM panel_users WHERE ip = ?`, ip)); err != nil {
+			return err
+		}
+		return requireAdmin(ctx, tx)
+	})
+}
+
+func (s *SQLite) TouchPanelUser(ctx context.Context, ip string, at time.Time) error {
+	return affected(s.db.ExecContext(ctx, `UPDATE panel_users SET last_seen = ? WHERE ip = ?`, ms(at), ip))
+}

@@ -46,6 +46,7 @@ platen admin    command line client for the admin API
 | `internal/brother/inspect` | Analysis tool for captured Brother print data |
 | `internal/printer` | Raw TCP connection to the printer |
 | `internal/admin` | `platen admin` commands |
+| `internal/server/panel` | web panel (HTML, CSS, JavaScript), embedded in the binary |
 | `internal/api` | JSON wire types shared by all of the above |
 
 ## Network

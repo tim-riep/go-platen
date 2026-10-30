@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/netbirdio/netbird/client/embed"
@@ -35,6 +36,8 @@ type Network interface {
 	// PeerForAddr identifies the mesh peer behind a remote address of an
 	// incoming connection.
 	PeerForAddr(remoteAddr string) (peerID, fqdn string, ok bool)
+	// Local returns this node's own mesh IPv4 address and DNS name.
+	Local() (ip, fqdn string)
 	// Stop disconnects from the mesh.
 	Stop(ctx context.Context) error
 }
@@ -68,6 +71,9 @@ type NetBird struct {
 	c      *embed.Client
 	log    *slog.Logger
 	logOut *logWriter
+	// local caches this node's address; it is refreshed by Monitor because
+	// the DNS domain of the mesh can change while platen runs.
+	local atomic.Pointer[[2]string]
 }
 
 var _ Network = (*NetBird)(nil)
@@ -123,6 +129,7 @@ func Start(ctx context.Context, o Options) (*NetBird, error) {
 	}
 	n := &NetBird{c: c, log: o.Logger.With("component", "mesh"), logOut: logOut}
 	if st, err := c.Status(); err == nil {
+		n.setLocal(st.LocalPeerState.IP, st.LocalPeerState.FQDN)
 		n.log.Info("connected to netbird", "ip", st.LocalPeerState.IP, "fqdn", st.LocalPeerState.FQDN)
 	}
 	return n, nil
@@ -199,6 +206,9 @@ func (n *NetBird) Monitor(ctx context.Context, interval time.Duration) {
 		case <-t.C:
 		}
 		st, err := n.c.Status()
+		if err == nil {
+			n.setLocal(st.LocalPeerState.IP, st.LocalPeerState.FQDN)
+		}
 		if err != nil {
 			n.log.Warn("netbird status unavailable", "err", err)
 			continue
@@ -227,4 +237,20 @@ func (n *NetBird) Monitor(ctx context.Context, interval time.Duration) {
 		}
 		n.log.Debug("netbird status", "peers", len(st.Peers), "connected", connected)
 	}
+}
+
+// setLocal stores this node's address; ip may carry a prefix length.
+func (n *NetBird) setLocal(ip, fqdn string) {
+	if i := strings.IndexByte(ip, '/'); i >= 0 {
+		ip = ip[:i]
+	}
+	n.local.Store(&[2]string{ip, strings.TrimSuffix(fqdn, ".")})
+}
+
+// Local returns this node's mesh IPv4 address and DNS name.
+func (n *NetBird) Local() (string, string) {
+	if l := n.local.Load(); l != nil {
+		return l[0], l[1]
+	}
+	return "", ""
 }

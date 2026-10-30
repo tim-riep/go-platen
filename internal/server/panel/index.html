@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>platen</title>
+<link rel="stylesheet" href="/panel/style.css">
+<script src="/panel/app.js" defer></script>
+</head>
+<body>
+<header class="bar">
+  <div class="brand"><span class="mark" aria-hidden="true"></span>platen</div>
+  <nav id="tabs" aria-label="Sections">
+    <button data-tab="overview">Overview</button>
+    <button data-tab="printers">Printers</button>
+    <button data-tab="workers">Workers</button>
+    <button data-tab="jobs">Jobs</button>
+    <button data-tab="clients">App clients</button>
+    <button data-tab="users" data-admin>Panel users</button>
+  </nav>
+  <div id="me" class="me"></div>
+</header>
+<main>
+  <div id="notice" class="notice" hidden></div>
+  <section id="view" aria-live="polite"></section>
+</main>
+<dialog id="dialog">
+  <form id="dialog-form" method="dialog">
+    <h2 id="dialog-title"></h2>
+    <div id="dialog-body"></div>
+    <p id="dialog-error" class="error" hidden></p>
+    <div class="actions">
+      <button type="button" id="dialog-cancel" class="secondary">Cancel</button>
+      <button type="submit" id="dialog-ok">Save</button>
+    </div>
+  </form>
+</dialog>
+</body>
+</html>

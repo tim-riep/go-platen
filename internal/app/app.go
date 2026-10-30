@@ -65,6 +65,8 @@ func RunServer(ctx context.Context, cfg *config.Server, n mesh.Network, log *slo
 		MaxAttempts: cfg.Server.MaxAttempts, JobRetention: cfg.Server.JobRetention.Duration,
 		CleanupInterval: cfg.Server.CleanupInterval.Duration, EnrollmentTTL: cfg.Server.EnrollmentTTL.Duration,
 		Version: version,
+		Panel:   cfg.Panel.IsEnabled(), PanelHosts: panelHosts(n, cfg.Panel.AllowedHosts),
+		BackendNames: backends.Names(),
 	})
 	if err != nil {
 		return err
@@ -249,4 +251,24 @@ func writeSecret(path, secret string) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
+}
+
+// panelHosts returns the host names the panel may be opened by: the
+// server's NetBird name, its first label (reachable through the mesh's DNS
+// search domain), its mesh IP and the configured extra names.
+func panelHosts(n mesh.Network, extra []string) func() []string {
+	return func() []string {
+		ip, fqdn := n.Local()
+		hosts := append([]string{}, extra...)
+		if ip != "" {
+			hosts = append(hosts, ip)
+		}
+		if fqdn != "" {
+			hosts = append(hosts, fqdn)
+			if short, _, ok := strings.Cut(fqdn, "."); ok {
+				hosts = append(hosts, short)
+			}
+		}
+		return hosts
+	}
 }

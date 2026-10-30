@@ -93,6 +93,13 @@ App clients:
   client delete <id>
   client rotate-token <id>
 
+Web panel users (identified by NetBird IPv4 address):
+  panel-user list
+  panel-user add <ip> [-name N] [-role admin|viewer]
+  panel-user update <ip> [-name N] [-role admin|viewer]
+  panel-user delete <ip>
+  panel-user reset <ip>                   bind the NetBird peer again on the next visit
+
 Jobs:
   job list [-status S] [-printer P] [-client C] [-worker W] [-limit N]
   job get <id>
@@ -121,6 +128,8 @@ func Run(ctx context.Context, c *Client, args []string, out io.Writer) error {
 		result, err = clientCmd(ctx, c, action, rest)
 	case "job", "jobs":
 		result, err = jobCmd(ctx, c, action, rest)
+	case "panel-user", "panel-users":
+		result, err = panelUserCmd(ctx, c, action, rest)
 	default:
 		return fmt.Errorf("%w: unknown resource %q", ErrUsage, resource)
 	}
@@ -388,4 +397,40 @@ func jobCmd(ctx context.Context, c *Client, action string, args []string) (any, 
 		return j, c.do(ctx, http.MethodGet, path("admin", "v1", "jobs", id), nil, &j)
 	}
 	return j, c.do(ctx, http.MethodPost, path("admin", "v1", "jobs", id, "cancel"), nil, &j)
+}
+
+func panelUserCmd(ctx context.Context, c *Client, action string, args []string) (any, error) {
+	fs := flag.NewFlagSet("panel-user", flag.ContinueOnError)
+	name := fs.String("name", "", "display name")
+	role := fs.String("role", "", "admin or viewer")
+	switch action {
+	case "list":
+		if _, err := parse(fs, args); err != nil {
+			return nil, err
+		}
+		var l api.List[api.PanelUser]
+		return l, c.do(ctx, http.MethodGet, "/admin/v1/panel-users", nil, &l)
+	case "add", "update", "delete", "reset":
+	default:
+		return nil, fmt.Errorf("%w: unknown panel-user action %q", ErrUsage, action)
+	}
+	ip, err := oneID(fs, args)
+	if err != nil {
+		return nil, err
+	}
+	given := set(fs)
+	p := path("admin", "v1", "panel-users", ip)
+	var u api.PanelUser
+	switch action {
+	case "add":
+		req := api.PanelUserRequest{IP: ip, Name: ptr(given["name"], *name), Role: ptr(given["role"], *role)}
+		return u, c.do(ctx, http.MethodPost, "/admin/v1/panel-users", req, &u)
+	case "update":
+		req := api.PanelUserRequest{Name: ptr(given["name"], *name), Role: ptr(given["role"], *role)}
+		return u, c.do(ctx, http.MethodPatch, p, req, &u)
+	case "delete":
+		return nil, c.do(ctx, http.MethodDelete, p, nil, nil)
+	default:
+		return u, c.do(ctx, http.MethodPost, p+"/reset-peer", nil, &u)
+	}
 }

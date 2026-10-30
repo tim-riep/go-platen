@@ -193,6 +193,31 @@ type Heartbeat struct {
 	Printers []Reachability
 }
 
+// PanelRole is the role of a web panel user.
+type PanelRole string
+
+const (
+	// PanelAdmin may change everything, including panel users.
+	PanelAdmin PanelRole = "admin"
+	// PanelViewer may only look.
+	PanelViewer PanelRole = "viewer"
+)
+
+// PanelUser is a user of the web panel. Users are identified by their
+// NetBird IPv4 address; access also requires the NetBird peer (WireGuard
+// public key) bound to that address. An empty PeerID is bound on the
+// user's first visit.
+type PanelUser struct {
+	IP        string
+	PeerID    string
+	PeerFQDN  string
+	Name      string
+	Role      PanelRole
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	LastSeen  *time.Time
+}
+
 // PrinterFilter restricts ListPrinters. Zero values match everything.
 type PrinterFilter struct {
 	WorkerID string
@@ -290,4 +315,17 @@ type Store interface {
 	DeleteFinishedJobs(ctx context.Context, before time.Time) ([]string, error)
 	// JobExists reports whether a job with the ID exists.
 	JobExists(ctx context.Context, id string) (bool, error)
+
+	ListPanelUsers(ctx context.Context) ([]PanelUser, error)
+	GetPanelUser(ctx context.Context, ip string) (*PanelUser, error)
+	CreatePanelUser(ctx context.Context, u *PanelUser) error
+	// ClaimFirstPanelAdmin creates the user only if there are no panel
+	// users yet; otherwise it returns ErrConflict.
+	ClaimFirstPanelAdmin(ctx context.Context, u *PanelUser) error
+	// UpdatePanelUser updates name, role and peer binding. It returns
+	// ErrConflict if no admin would be left.
+	UpdatePanelUser(ctx context.Context, u *PanelUser) error
+	// DeletePanelUser returns ErrConflict if no admin would be left.
+	DeletePanelUser(ctx context.Context, ip string) error
+	TouchPanelUser(ctx context.Context, ip string, at time.Time) error
 }

@@ -20,3 +20,8 @@ admin_token_hash = "sha256:00000000000000000000000000000000000000000000000000000
 enabled = true
 name = "built-in worker"
 journal_dir = "/var/lib/platen/journal"
+
+[panel]
+# Web panel on the mesh port; the first NetBird peer that opens it becomes
+# its admin. See docs/panel.md.
+enabled = true

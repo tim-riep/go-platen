@@ -33,3 +33,8 @@ enrollment_token_ttl = "24h"
 enabled = true
 name = "built-in worker"
 journal_dir = "/var/lib/platen/journal"
+
+[panel]
+# Web panel on the mesh port; the first NetBird peer that opens it becomes
+# its admin. See docs/panel.md.
+enabled = true

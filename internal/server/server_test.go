@@ -152,6 +152,10 @@ func (e *env) do(method, path, token string, body any, header ...string) resp {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	for i := 0; i+1 < len(header); i += 2 {
+		if header[i] == "Host" {
+			req.Host = header[i+1]
+			continue
+		}
 		req.Header.Set(header[i], header[i+1])
 	}
 	res, err := http.DefaultClient.Do(req)

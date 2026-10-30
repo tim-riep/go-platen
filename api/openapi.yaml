@@ -546,6 +546,82 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/AppClient" }
 
+  /admin/v1/panel-users:
+    get:
+      tags: [admin]
+      summary: List web panel users
+      security: [{ adminToken: [] }]
+      responses:
+        "200":
+          description: Panel users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/PanelUser" }
+    post:
+      tags: [admin]
+      summary: Add a web panel user by NetBird IPv4 address
+      security: [{ adminToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PanelUserRequest" }
+      responses:
+        "201":
+          description: Added; the peer is bound on the first visit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PanelUser" }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/v1/panel-users/{ip}:
+    parameters:
+      - { name: ip, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [admin]
+      summary: Change name or role of a panel user
+      security: [{ adminToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PanelUserRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PanelUser" }
+        "409":
+          description: The panel would have no admin left
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+    delete:
+      tags: [admin]
+      summary: Remove a panel user
+      security: [{ adminToken: [] }]
+      responses:
+        "204": { description: Removed }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/v1/panel-users/{ip}/reset-peer:
+    post:
+      tags: [admin]
+      summary: Clear the peer binding; the next visit binds the peer again
+      security: [{ adminToken: [] }]
+      parameters:
+        - { name: ip, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Binding cleared
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PanelUser" }
+
   /admin/v1/jobs:
     get:
       tags: [admin]
@@ -776,6 +852,24 @@ components:
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         token: { type: string, description: Only in the response that created or rotated the token }
+    PanelUser:
+      type: object
+      required: [ip, role, bound, created_at]
+      properties:
+        ip: { type: string, description: NetBird IPv4 address }
+        name: { type: string }
+        role: { type: string, enum: [admin, viewer] }
+        peer_id: { type: string, description: NetBird peer bound to the address }
+        peer_fqdn: { type: string }
+        bound: { type: boolean, description: false until the first visit binds the peer }
+        created_at: { type: string, format: date-time }
+        last_seen: { type: string, format: date-time }
+    PanelUserRequest:
+      type: object
+      properties:
+        ip: { type: string, description: Required on create }
+        name: { type: string }
+        role: { type: string, enum: [admin, viewer], default: viewer }
     AppClientRequest:
       type: object
       properties:

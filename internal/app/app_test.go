@@ -51,6 +51,8 @@ func (l *loopback) PeerForAddr(string) (string, string, bool) {
 
 func (l *loopback) Stop(context.Context) error { return nil }
 
+func (l *loopback) Local() (string, string) { return "127.0.0.1", "localhost" }
+
 func (l *loopback) url() string {
 	for i := 0; i < 200; i++ {
 		l.mu.Lock()

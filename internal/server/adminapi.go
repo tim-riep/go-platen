@@ -56,6 +56,13 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	handle("DELETE /admin/v1/app-clients/{id}", s.adminDeleteAppClient)
 	handle("POST /admin/v1/app-clients/{id}/rotate-token", s.adminRotateAppClientToken)
 
+	// Panel users; the way back in when no panel admin can log in.
+	handle("GET /admin/v1/panel-users", s.listPanelUsers)
+	handle("POST /admin/v1/panel-users", s.createPanelUser)
+	handle("PATCH /admin/v1/panel-users/{ip}", s.updatePanelUser)
+	handle("DELETE /admin/v1/panel-users/{ip}", s.deletePanelUser)
+	handle("POST /admin/v1/panel-users/{ip}/reset-peer", s.resetPanelUserPeer)
+
 	handle("GET /admin/v1/jobs", s.adminListJobs)
 	handle("GET /admin/v1/jobs/{id}", s.adminGetJob)
 	handle("POST /admin/v1/jobs/{id}/cancel", s.adminCancelJob)
