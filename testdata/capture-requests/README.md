@@ -24,11 +24,16 @@ powershell -ExecutionPolicy Bypass -File .\capture.ps1
 
 The script asks which installed printer's Brother driver to use and creates
 a printer "platen capture" with that driver on a port that writes to a file,
-so nothing goes to a real printer. For each case it resets the printer to
-the driver defaults, prints the PDF and stores `capture.prn`, `source.pdf`
-and `settings.txt` in `testdata/captures/<folder>/`. For resolution, toner
-save, paper source and media type it opens the driver's printing preferences
-and asks you to change that one setting, and afterwards to set it back.
+so nothing goes to a real printer. A new printer starts with the driver's own
+defaults (HQ 1200), so the script first opens the printing preferences and
+asks you to set the baseline: 600 dpi, toner save off, plain paper. For each
+case it prints the PDF and stores `capture.prn`, `source.pdf` and
+`settings.txt` in `testdata/captures/<folder>/`. For resolution, toner save,
+paper source and media type it opens the printing preferences and asks you
+to change that one setting, and afterwards to set it back. It reads
+resolution, toner save and media type back from the PJL header of every
+capture, writes them into `settings.txt` and offers to capture again if they
+do not match the case.
 Existing captures are skipped; `-Only 03-calibration-600,08-stripes` captures
 selected cases and `-Force` captures again. At the end it offers to remove the
 capture printer.
