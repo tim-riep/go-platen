@@ -326,6 +326,9 @@ clustered-dot screen (`dither=halftone`) by default.
 
 ## 4. Open questions
 
+Test pages and the driver settings that should answer these questions are
+listed in [testdata/capture-requests](../testdata/capture-requests/README.md).
+
 1. **Row length.** The row length is not part of the stream. The driver's
    data area is bytes 2–597; whether the printer accepts data in bytes 0–1
    or beyond 597 is unknown. platen writes only bytes 2–597.
