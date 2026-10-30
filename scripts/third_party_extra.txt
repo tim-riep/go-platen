@@ -14,3 +14,12 @@ the fork locations.
 
 Only the BSD-3-Clause licensed parts of NetBird (github.com/netbirdio/netbird)
 are used; none of its AGPL-3.0 licensed directories are included.
+
+github.com/klippa-app/go-pdfium (MIT) embeds PDFium compiled to WebAssembly
+(internal/pdfium_wasm/pdfium.wasm). PDFium is Copyright The PDFium Authors
+and licensed under the BSD-3-Clause and Apache-2.0 licenses; see
+https://pdfium.googlesource.com/pdfium/+/main/LICENSE. PDFium builds include
+third-party libraries from PDFium's third_party directory. go-pdfium does not
+document which of them are compiled into pdfium.wasm; see the open question
+in docs/licensing.md. The WebAssembly module is run by github.com/tetratelabs/wazero
+(Apache-2.0).

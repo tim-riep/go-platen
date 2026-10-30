@@ -4,7 +4,9 @@ go 1.26.4
 
 require (
 	github.com/BurntSushi/toml v1.6.0
+	github.com/klippa-app/go-pdfium v1.21.4
 	github.com/netbirdio/netbird v0.82.0
+	github.com/tetratelabs/wazero v1.12.0
 	modernc.org/sqlite v1.61.0
 )
 
@@ -58,6 +60,7 @@ require (
 	github.com/huin/goupnp v1.2.0 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
+	github.com/jolestar/go-commons-pool/v2 v2.1.2 // indirect
 	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/koron/go-ssdp v0.0.4 // indirect
@@ -79,7 +82,6 @@ require (
 	github.com/netbirdio/go-nat v0.0.0-20260821095157-6b2c8c5c74e8 // indirect
 	github.com/netbirdio/ice/v4 v4.0.0-20261021152109-d0e5dfacb548 // indirect
 	github.com/netbirdio/wireguard-go v0.0.0-20261021152105-0de46b309cdb // indirect
-	github.com/onsi/gomega v1.44.0 // indirect
 	github.com/petermattis/goid v0.0.0-20250303134427-723919f7f203 // indirect
 	github.com/pion/dtls/v2 v2.2.10 // indirect
 	github.com/pion/dtls/v3 v3.0.9 // indirect

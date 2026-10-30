@@ -1,0 +1,176 @@
+package render
+
+import (
+	"context"
+	"image"
+	"sync"
+	"testing"
+)
+
+var (
+	testRendererOnce sync.Once
+	testRenderer     *PDFRenderer
+	testRendererErr  error
+)
+
+func renderer(t *testing.T) *PDFRenderer {
+	t.Helper()
+	testRendererOnce.Do(func() { testRenderer, testRendererErr = NewPDFRenderer() })
+	if testRendererErr != nil {
+		t.Fatal(testRendererErr)
+	}
+	return testRenderer
+}
+
+func renderAll(t *testing.T, pdf []byte, o PageOptions) []*Bitmap {
+	t.Helper()
+	var pages []*Bitmap
+	err := renderer(t).Render(context.Background(), pdf, o, func(_ int, bm *Bitmap) error {
+		pages = append(pages, bm)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pages
+}
+
+func a4(t *testing.T) Paper {
+	p, err := ParsePaper("A4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestRenderRectangle(t *testing.T) {
+	// A4 page, black square from (72,72) to (216,216) in PDF coordinates
+	// (origin bottom left).
+	pdf := makePDF(595.276, 841.890, "0 0 0 rg 72 72 144 144 re f", "0 0 0 rg 0 0 10 10 re f")
+	pages := renderAll(t, pdf, PageOptions{Paper: a4(t), DPI: 72, Dither: Threshold})
+	if len(pages) != 2 {
+		t.Fatalf("%d pages", len(pages))
+	}
+	bm := pages[0]
+	if bm.Width != 595 || bm.Height != 842 || bm.DPI != 72 {
+		t.Fatalf("size %dx%d", bm.Width, bm.Height)
+	}
+	if !bm.Black(144, 842-144) {
+		t.Error("center of square is white")
+	}
+	for _, p := range [][2]int{{10, 10}, {300, 400}, {60, 842 - 144}, {230, 842 - 144}} {
+		if bm.Black(p[0], p[1]) {
+			t.Errorf("pixel %v is black", p)
+		}
+	}
+	if !pages[1].Black(2, 840) || pages[1].Black(100, 100) {
+		t.Error("second page wrong")
+	}
+}
+
+func TestRenderResolutionAndFit(t *testing.T) {
+	// A Letter page on A4 paper is scaled to fit and centered.
+	pdf := makePDF(612, 792, "0 0 0 rg 0 0 612 792 re f")
+	bm := renderAll(t, pdf, PageOptions{Paper: a4(t), DPI: 150})[0]
+	w, h := a4(t).Pixels(150)
+	if bm.Width != w || bm.Height != h {
+		t.Fatalf("size %dx%d, want %dx%d", bm.Width, bm.Height, w, h)
+	}
+	if !bm.Black(w/2, h/2) {
+		t.Error("page not rendered")
+	}
+	// Letter is shorter relative to its width than A4: white bands top and
+	// bottom, none left and right.
+	if bm.Black(w/2, 2) || bm.Black(w/2, h-3) {
+		t.Error("expected white margin at top and bottom")
+	}
+	if !bm.Black(1, h/2) || !bm.Black(w-2, h/2) {
+		t.Error("expected page to fill the width")
+	}
+}
+
+func TestRenderAutoRotate(t *testing.T) {
+	// Landscape A4 with a mark in the top left corner.
+	pdf := makePDF(841.890, 595.276, "0 0 0 rg 0 545 50 50 re f")
+	bm := renderAll(t, pdf, PageOptions{Paper: a4(t), DPI: 72, AutoRotate: true})[0]
+	if bm.Width != 595 || bm.Height != 842 {
+		t.Fatalf("size %dx%d", bm.Width, bm.Height)
+	}
+	// Rotated clockwise, the top left corner ends up top right.
+	if !bm.Black(590, 5) || bm.Black(5, 5) {
+		t.Error("mark not rotated to the top right")
+	}
+	// Without rotation the page is scaled to the paper width (factor
+	// 595/842) and centered vertically, so the mark is at the left edge
+	// about 211 pixels from the top.
+	bm = renderAll(t, pdf, PageOptions{Paper: a4(t), DPI: 72})[0]
+	if !bm.Black(5, 220) || bm.Black(590, 5) || bm.Black(5, 5) {
+		t.Error("page rotated or misplaced although AutoRotate is off")
+	}
+}
+
+func TestRenderInvalidPDF(t *testing.T) {
+	err := renderer(t).Render(context.Background(), []byte("not a pdf"), PageOptions{Paper: a4(t), DPI: 72}, func(int, *Bitmap) error { return nil })
+	if err == nil {
+		t.Fatal("invalid pdf rendered")
+	}
+}
+
+func TestThresholdAndDiffusion(t *testing.T) {
+	g := image.NewGray(image.Rect(0, 0, 64, 64))
+	for i := range g.Pix {
+		g.Pix[i] = 128 // 50% gray
+	}
+	th := ToBitmap(g, Threshold, 129, 600)
+	if !th.Black(0, 0) || !th.Black(63, 63) {
+		t.Error("threshold: gray below threshold must be black")
+	}
+	fs := ToBitmap(g, FloydSteinberg, 128, 600)
+	black := 0
+	for y := 0; y < 64; y++ {
+		for x := 0; x < 64; x++ {
+			if fs.Black(x, y) {
+				black++
+			}
+		}
+	}
+	if black < 64*64*4/10 || black > 64*64*6/10 {
+		t.Errorf("error diffusion of 50%% gray gave %d of %d black pixels", black, 64*64)
+	}
+	for i := range g.Pix {
+		g.Pix[i] = 255
+	}
+	if ToBitmap(g, FloydSteinberg, 128, 600).Black(10, 10) {
+		t.Error("white became black")
+	}
+}
+
+func TestBitmapPacking(t *testing.T) {
+	bm := NewBitmap(10, 2, 300)
+	if bm.Stride != 2 {
+		t.Fatal(bm.Stride)
+	}
+	bm.Set(0, 0)
+	bm.Set(9, 1)
+	if bm.Row(0)[0] != 0x80 || bm.Row(1)[1] != 0x40 {
+		t.Fatalf("%x", bm.Data)
+	}
+}
+
+func TestParse(t *testing.T) {
+	if _, err := ParsePaper("tabloid"); err == nil {
+		t.Error("unknown paper accepted")
+	}
+	if p, _ := ParsePaper(""); p.Name != "A4" {
+		t.Error("default paper")
+	}
+	if w, h := a4(t).Pixels(600); w != 4961 || h != 7016 {
+		t.Errorf("A4 at 600 dpi: %dx%d", w, h)
+	}
+	if d, _ := ParseDither("error-diffusion"); d != FloydSteinberg {
+		t.Error(d)
+	}
+	if _, err := ParseDither("ordered"); err == nil {
+		t.Error("unknown dither accepted")
+	}
+}

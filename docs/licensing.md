@@ -65,3 +65,20 @@ go list -deps ./... | grep -E 'netbirdio/netbird/(management|signal|relay|combin
 ```
 
 The command must print nothing.
+
+## PDFium (WebAssembly)
+
+The `pdf-to-raster` backend renders PDFs with
+[go-pdfium](https://github.com/klippa-app/go-pdfium) (MIT) in WebAssembly
+mode. go-pdfium embeds `pdfium.wasm`, run by
+[wazero](https://github.com/tetratelabs/wazero) (Apache-2.0), so the binary
+stays cgo-free. PDFium itself is BSD-3-Clause and Apache-2.0.
+
+**Open question:** go-pdfium does not document how `pdfium.wasm` was built,
+in particular which of PDFium's bundled third-party libraries (font, image
+and color management libraries) are compiled into it. The license texts of
+those libraries are therefore not yet listed individually in
+THIRD_PARTY_LICENSES. This needs to be resolved by obtaining the build
+configuration from the go-pdfium maintainers, or by building `pdfium.wasm`
+ourselves from a documented configuration and loading it with
+`webassembly.InitWithWASM`. The binary was deliberately not inspected.
