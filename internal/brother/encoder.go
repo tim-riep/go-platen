@@ -31,19 +31,25 @@ const (
 	// OriginX and OriginY locate raster pixel (0, 0) on the paper bitmap.
 	OriginX = 76
 	OriginY = 100
-	// RowBytes is the row length: A4 width (4961 pixels at 600 dpi) minus
-	// OriginX on both sides, rounded up to whole bytes.
-	RowBytes = 602
+	// RowBytes is the row length. Only bytes DataFirst to DataEnd-1 carry
+	// data; the driver never writes the others (section 2.3).
+	RowBytes  = 600
+	DataFirst = 2
+	DataEnd   = 598
 )
 
 // Segmentation limits (section 3).
 const (
-	// Only segments of blank rows may hold more than 16 rows; the
-	// printer stops printing when other segments do.
+	// Only segments of blank rows hold more than 16 rows, as in the
+	// driver's streams.
 	maxBlankRows   = 128
 	maxEditRows    = 16
 	maxSegmentSize = 3900
-	maxEdits       = 254
+	// bandRows is the printer's band height. Segments never cross a band
+	// boundary, and the first row of a band does not depend on any
+	// previous row.
+	bandRows = 128
+	maxEdits = 254
 )
 
 const uel = "\x1b%-12345X"
@@ -113,12 +119,18 @@ func (e *Encoder) Page(out io.Writer, bm *render.Bitmap) error {
 	io.WriteString(e.w, pageSetup)
 	e.pages++
 
-	// Section 3: the first row of a page is encoded against a blank seed.
-	clear(e.seed)
 	rows := make([][]byte, PageRows)
 	for y := range rows {
 		extractRow(e.row, bm, OriginY+y, OriginX)
-		rows[y] = EncodeRow(nil, e.seed, e.row)
+		clear(e.row[:DataFirst])
+		clear(e.row[DataEnd:])
+		if y%bandRows == 0 {
+			// The first row of a band rewrites the whole data area
+			// (section 2.2).
+			rows[y] = EncodeBandStart(nil, e.row)
+		} else {
+			rows[y] = EncodeRow(nil, e.seed, e.row)
+		}
 		if rows[y][0] == blankRow {
 			clear(e.seed)
 		} else {
@@ -175,6 +187,21 @@ type edit struct {
 	off, cnt int  // offset relative to the end of the previous edit, length
 	run      bool // repeated byte
 	start    int  // absolute start in the row
+}
+
+// EncodeBandStart appends the encoding of the first row of a band to dst:
+// a blank row, or edits that write every byte of the data area, so that the
+// result does not depend on the printer's seed row.
+func EncodeBandStart(dst, row []byte) []byte {
+	if allZero(row) {
+		return append(dst, blankRow)
+	}
+	// A pseudo seed that differs from row in every data byte.
+	seed := make([]byte, len(row))
+	for i := DataFirst; i < DataEnd && i < len(row); i++ {
+		seed[i] = ^row[i]
+	}
+	return EncodeRow(dst, seed, row)
 }
 
 // EncodeRow appends the encoding of row against seed to dst.
@@ -329,7 +356,7 @@ func writeSegments(w *bufio.Writer, rows [][]byte) {
 	for i := 0; i < len(rows); {
 		if t := blankRun(i); t >= maxEditRows || (t > 0 && i+t == len(rows)) {
 			for t > 0 {
-				n := min(t, maxBlankRows)
+				n := min(t, maxBlankRows, bandRows-i%bandRows)
 				pending = append(pending, rows[i:i+n])
 				i += n
 				t -= n
@@ -339,6 +366,9 @@ func writeSegments(w *bufio.Writer, rows [][]byte) {
 		flushBlank()
 		n, size := 0, 2
 		for i+n < len(rows) && n < maxEditRows {
+			if n > 0 && (i+n)%bandRows == 0 {
+				break
+			}
 			if n > 0 && size+len(rows[i+n]) > maxSegmentSize {
 				break
 			}

@@ -166,6 +166,9 @@ func checkStructure(t *testing.T, s *inspect.Stream) {
 		}
 		total := 0
 		for _, sg := range p.Segments {
+			if total/bandRows != (total+sg.Rows-1)/bandRows {
+				t.Errorf("page %d: segment at row %d with %d rows crosses a band boundary", n+1, total, sg.Rows)
+			}
 			total += sg.Rows
 			blank := len(sg.Data) == sg.Rows+2 && bytes.Count(sg.Data[2:], []byte{blankRow}) == sg.Rows
 			if sg.Rows < 1 || sg.Rows > maxBlankRows || (!blank && sg.Rows > maxEditRows) || len(sg.Data) > maxSegmentSize+RowBytes*2 {
@@ -363,4 +366,106 @@ func TestRepeatedRowsInShortSegments(t *testing.T) {
 			t.Fatalf("row %d: line missing", y)
 		}
 	}
+}
+
+// Every band must decode without the rows of the previous band, as in the
+// captures; a stream relying on the seed across a band boundary printed
+// only its first band on the HL-2135W.
+func TestBandsAreSelfContained(t *testing.T) {
+	w, h := mustA4(t).Pixels(DPI)
+	bm := render.NewBitmap(w, h, DPI)
+	// Vertical lines across many bands.
+	for y := 300; y < 3000; y++ {
+		bm.Set(600, y)
+		bm.Set(2000, y)
+	}
+	s, err := inspect.Parse(encodePages(t, "bands", []*render.Bitmap{bm}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkStructure(t, s)
+	full, _, err := inspect.DecodeRows(s.Pages[0], RowBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The decoder starts every band with a blank seed, so a band start that
+	// relied on the previous band would lose the lines. Band starts must
+	// also write exactly the data area, as the driver does.
+	for y := 0; y < len(full); y += bandRows {
+		x := 600 - OriginX
+		if y+OriginY >= 300 && y+OriginY < 3000 && full[y][x/8]&(0x80>>(x%8)) == 0 {
+			t.Fatalf("band starting at row %d lost the line", y)
+		}
+	}
+}
+
+func TestBandStartWritesDataArea(t *testing.T) {
+	row := make([]byte, RowBytes)
+	row[100], row[300] = 0x0f, 0xf0
+	enc := EncodeBandStart(nil, row)
+	// Decode it after a row full of ink: the result must still be row,
+	// whatever the seed is.
+	ink := make([]byte, RowBytes)
+	for i := DataFirst; i < DataEnd; i++ {
+		ink[i] = 0xff
+	}
+	data := append([]byte{0, 2}, EncodeRow(nil, make([]byte, RowBytes), ink)...)
+	data = append(data, enc...)
+	p := &inspect.Page{Segments: []inspect.Segment{{Rows: 2, Data: data}}}
+	got, _, err := inspect.DecodeRows(p, RowBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got[1], row) {
+		t.Fatal("band start row depends on the seed")
+	}
+	written := writtenBytes(t, enc)
+	for i := 0; i < RowBytes; i++ {
+		if written[i] != (i >= DataFirst && i < DataEnd) {
+			t.Fatalf("byte %d written: %v", i, written[i])
+		}
+	}
+	if !bytes.Equal(EncodeBandStart(nil, make([]byte, RowBytes)), []byte{blankRow}) {
+		t.Fatal("blank band start")
+	}
+}
+
+// writtenBytes reports which row bytes an encoded row writes.
+func writtenBytes(t *testing.T, enc []byte) []bool {
+	t.Helper()
+	w := make([]bool, RowBytes)
+	ext := func(p *int, v, m int) int {
+		if v == m {
+			for {
+				b := enc[*p]
+				*p++
+				v += int(b)
+				if b != 255 {
+					break
+				}
+			}
+		}
+		return v
+	}
+	p, cur := 1, 0
+	for k := 0; k < int(enc[0]); k++ {
+		c := enc[p]
+		p++
+		var off, n int
+		if c&0x80 != 0 {
+			off = ext(&p, int(c>>5)&3, 3)
+			n = ext(&p, int(c&31), 31) + 2
+			p++
+		} else {
+			off = ext(&p, int(c>>3)&15, 15)
+			n = ext(&p, int(c&7), 7) + 1
+			p += n
+		}
+		cur += off
+		for i := cur; i < cur+n; i++ {
+			w[i] = true
+		}
+		cur += n
+	}
+	return w
 }

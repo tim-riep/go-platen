@@ -233,9 +233,14 @@ type RowStats struct {
 // encoding.
 var ErrDecode = errors.New("decode")
 
+// BandRows is the height of the bands the printer processes: the seed row
+// is blank at the start of every band (rows 0, 128, 256, ... of a page).
+const BandRows = 128
+
 // DecodeRows decodes all segments of a page with the row encoding of
-// compression mode 1030 as documented in docs/brother-raster-format.md.
-// width is the row length in bytes; data beyond it is an error.
+// compression mode 1030 as documented in docs/brother-raster-format.md,
+// including the seed row reset at every band. width is the row length in
+// bytes; data beyond it is an error.
 func DecodeRows(p *Page, width int) ([][]byte, RowStats, error) {
 	return decodeRows(p, width, false)
 }
@@ -258,6 +263,9 @@ func decodeRows(p *Page, width int, reset bool) ([][]byte, RowStats, error) {
 		buf := seg.Data
 		pos := 2
 		for r := 0; r < seg.Rows; r++ {
+			if len(rows)%BandRows == 0 {
+				seed = make([]byte, width)
+			}
 			row, n, err := decodeRow(buf, pos, seed, &st)
 			if err != nil {
 				return nil, st, fmt.Errorf("%w: segment at %d, row %d: %v", ErrDecode, seg.Offset, r, err)

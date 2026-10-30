@@ -181,16 +181,38 @@ Observed segmentation by the driver (all 12 pages):
   segments of 16, 16, 16, 16 and 6 rows. Most segments have exactly 16 rows; shorter segments occur at
   transitions between blank and printed areas.
 - The largest segment is 3911 bytes (`02-sample-11-pages`).
+- **No segment crosses a 128-row band boundary**, counting rows from the
+  first row of the page (rows 0, 128, 256, ...): 3118 of 3118 segments. When
+  a run of rows would cross a boundary, the driver ends the segment there.
+  Example: `01-test-document` sends a segment of only 6 repeated rows
+  (rows 378–383) so that the next segment starts at row 384 = 3 × 128.
 
 Whether the printer requires this limit is not known. platen follows it
 because the driver does.
 
 ### 2.2 Row encoding
 
-Rows are delta encoded against a **seed row**, the previous row. The seed row
-carries over from one segment to the next and from one escape sequence to the
-next: decoding with a blank seed at every segment start gives a different
-image than the source (checked with `inspect.DecodeRowsResetSeed`).
+Rows are delta encoded against a **seed row**, the previous row. Within a
+128-row band the seed row carries over from one segment to the next and from
+one escape sequence to the next: decoding with a blank seed at every segment
+start gives a different image than the source (checked with
+`inspect.DecodeRowsResetSeed`).
+
+**The first row of every band does not depend on any previous row.** In
+both captures, the first row of every band is either a blank row (`0xFF`,
+360 times) or a row whose edits write **exactly bytes 2 to 597**, the whole
+data area (288 of 288), so that the result is the same whatever the seed row
+holds. The driver even re-describes a row that is identical to the previous
+one when it starts a band: row 384 of `01-test-document` is encoded with
+9 edits, including runs of zero bytes, although rows 302–383 are unchanged
+repeats of it. Within a band, the driver never writes outside bytes 2–597
+(31 669 edited rows).
+
+The printer depends on this. Two platen test pages whose segments crossed
+band boundaries and whose row 384 was a repeat row printed only the rows up
+to row 383 (the top rule and the start of the frame lines); the driver's own
+stream of the same page printed completely on the same printer (test prints
+on 2026-10-30).
 
 Each row starts with one byte `n`:
 
@@ -250,9 +272,10 @@ Example (`01-test-document`, first row with ink, segment data at offset 824, `ES
 
 - A set bit is a black pixel; the most significant bit is the leftmost pixel.
 - Each page has 6816 rows. A4 at 600 dpi is 7016 rows high; 6816 = 7016 − 200.
-- Rows use at most 567 bytes: no capture has ink beyond byte 566
-  (0-based) of a row (`02-sample-11-pages`).
-  The row length itself is not transmitted: rows only contain edits.
+- The data area of a row is bytes 2 to 597: band start rows write exactly
+  this range, and no edit writes outside it. A row is therefore taken to be
+  600 bytes (4800 pixels), of which bytes 0–1 and 598–599 stay white.
+  Ink occurs between bytes 34 and 566 in the captures.
 - Comparing the decoded pages with a PDFium rendering of the source PDF
   (A4, 600 dpi) gives the best match at a horizontal offset of **76 pixels**
   on all 12 pages and a vertical offset of **91 to 95 rows** (93 on 10 of 12
@@ -276,26 +299,25 @@ a choice, it decides as follows:
 | --- | --- |
 | PJL header | same commands and line endings as observed, without the `PRINTLOG` lines (job log entries); the job name is the job title, ASCII only, without the unexplained prefix byte |
 | Page setup | the observed byte sequences for the first and the following pages |
-| Page geometry | A4 at 600 dpi only; 6816 rows; source bitmap origin at (76, 100) pixels; row length 602 bytes (4816 pixels, the paper width minus 76 pixels on both sides, rounded up to whole bytes) |
+| Page geometry | A4 at 600 dpi only; 6816 rows; source bitmap origin at (76, 100) pixels; rows of 600 bytes, ink outside bytes 2–597 is dropped |
+| Bands | segments end at every 128-row band boundary; the first row of every band is a blank row or rewrites bytes 2–597 |
 | Segments | runs of at least 16 blank rows in segments of up to 128 rows, combined in one escape sequence; all other rows in segments of at most 16 rows, each in its own escape sequence, ending early before a segment would exceed 3900 bytes |
 | Edits | longest runs of 3 or more equal bytes become repeated-byte edits, other changed bytes literal edits; edits are merged if a row would otherwise need more than 254 |
-| First row of a page | encoded against a blank seed row |
 | Copies | pages are repeated by the raster backend; `ESC&l1X` is always sent |
 | Toner save, other resolutions, other paper sizes | not supported (no captures) |
 
 ## 4. Open questions
 
-1. **Row length and right edge.** The row length is not part of the stream,
-   and no capture has ink beyond byte 566. It is unknown how the printer
-   treats data beyond its printable width. platen sends at most 602 bytes.
+1. **Row length.** The row length is not part of the stream. The driver's
+   data area is bytes 2–597; whether the printer accepts data in bytes 0–1
+   or beyond 597 is unknown. platen writes only bytes 2–597.
 2. **Vertical origin.** The measured offset is 91–95 rows, while the page
    height suggests 100 rows (7016 − 6816 = 200, split evenly). The
    difference may come from the PDF viewer or the driver's own positioning.
    A capture of a page with marks at known positions (e.g. a 1 mm frame at
    10 mm from every edge) would settle it. platen uses 100 rows.
-3. **Seed row at the start of a page.** Every captured page starts with a
-   blank row, so it is not visible whether the seed row is reset at a new
-   page or at `ESC*b1030M`. platen assumes a blank seed at each page start.
+3. **Seed row at the start of a page.** Row 0 of a page is a band start, so
+   the seed row is blank there (section 2.2).
 4. **More than 254 edits in a row**: not observed (maximum 215).
 5. **Segment size limit**: the largest observed segment has 3911 bytes; a
    printer limit is unknown.
