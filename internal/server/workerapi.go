@@ -17,8 +17,18 @@ import (
 // WorkerService implements the worker side operations. The HTTP worker API
 // calls it after authenticating the worker; the built-in worker calls it
 // directly through its in-process transport. Both share this code path.
+//
+// Errors are returned as *api.Error where the cause is known, so both
+// transports report them identically.
 type WorkerService struct {
 	s *Server
+}
+
+func toAPI(err error) error {
+	if ae := apiError(err); ae != nil {
+		return ae
+	}
+	return err
 }
 
 func printerConfig(p *store.Printer) api.PrinterConfig {
@@ -32,11 +42,11 @@ func printerConfig(p *store.Printer) api.PrinterConfig {
 func (ws *WorkerService) Config(ctx context.Context, workerID string) (*api.WorkerConfig, error) {
 	w, err := ws.s.store.GetWorker(ctx, workerID)
 	if err != nil {
-		return nil, err
+		return nil, toAPI(err)
 	}
 	printers, err := ws.s.store.ListPrinters(ctx, store.PrinterFilter{WorkerID: workerID})
 	if err != nil {
-		return nil, err
+		return nil, toAPI(err)
 	}
 	out := &api.WorkerConfig{
 		WorkerID: w.ID, Name: w.Name, Printers: make([]api.PrinterConfig, 0, len(printers)),
@@ -65,12 +75,12 @@ func (ws *WorkerService) Lease(ctx context.Context, workerID string, printers []
 			WorkerID: workerID, PrinterIDs: printers, Now: ws.s.opts.Now(), Duration: ws.s.opts.LeaseDuration,
 		})
 		if err != nil {
-			return nil, err
+			return nil, toAPI(err)
 		}
 		if j != nil {
 			p, err := ws.s.store.GetPrinter(ctx, j.PrinterID)
 			if err != nil {
-				return nil, err
+				return nil, toAPI(err)
 			}
 			ws.s.log.Info("job leased", "job", j.ID, "worker", workerID, "printer", j.PrinterID, "attempt", j.Attempts)
 			return &api.Lease{
@@ -96,7 +106,7 @@ func (ws *WorkerService) Lease(ctx context.Context, workerID string, printers []
 func (ws *WorkerService) Document(ctx context.Context, workerID, jobID string) (io.ReadCloser, *store.Job, error) {
 	j, err := ws.s.store.GetJob(ctx, jobID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, toAPI(err)
 	}
 	if j.LeaseHolder != workerID || (j.Status != store.JobLeased && j.Status != store.JobPrinting) {
 		return nil, nil, api.Errorf(http.StatusConflict, api.CodeConflict, "job is not leased to this worker")
@@ -111,12 +121,18 @@ func (ws *WorkerService) Document(ctx context.Context, workerID, jobID string) (
 	return f, j, nil
 }
 
+// OpenDocument is Document without the job metadata.
+func (ws *WorkerService) OpenDocument(ctx context.Context, workerID, jobID string) (io.ReadCloser, error) {
+	rc, _, err := ws.Document(ctx, workerID, jobID)
+	return rc, err
+}
+
 // Progress extends the lease and marks the job as printing.
 func (ws *WorkerService) Progress(ctx context.Context, workerID, jobID string) (*api.ProgressResponse, error) {
 	now := ws.s.opts.Now()
 	j, err := ws.s.store.ExtendLease(ctx, jobID, workerID, now, now.Add(ws.s.opts.LeaseDuration))
 	if err != nil {
-		return nil, err
+		return nil, toAPI(err)
 	}
 	return &api.ProgressResponse{ExpiresAt: *j.LeaseExpiresAt}, nil
 }
@@ -125,7 +141,7 @@ func (ws *WorkerService) Progress(ctx context.Context, workerID, jobID string) (
 func (ws *WorkerService) Complete(ctx context.Context, workerID, jobID string) error {
 	j, err := ws.s.store.CompleteJob(ctx, jobID, workerID, ws.s.opts.Now())
 	if err != nil {
-		return err
+		return toAPI(err)
 	}
 	ws.s.log.Info("job done", "job", j.ID, "worker", workerID, "printer", j.PrinterID)
 	ws.s.notify.broadcast()
@@ -147,7 +163,7 @@ func (ws *WorkerService) Fail(ctx context.Context, workerID, jobID string, req a
 		JobID: jobID, WorkerID: workerID, Error: msg, Retryable: retryable, Now: ws.s.opts.Now(),
 	})
 	if err != nil {
-		return err
+		return toAPI(err)
 	}
 	ws.s.log.Warn("job failed", "job", j.ID, "worker", workerID, "printer", j.PrinterID, "status", j.Status, "error", msg)
 	ws.s.notify.broadcast()
@@ -160,7 +176,7 @@ func (ws *WorkerService) Heartbeat(ctx context.Context, workerID string, req api
 	for _, p := range req.Printers {
 		hb.Printers = append(hb.Printers, store.Reachability{PrinterID: p.PrinterID, Reachable: p.Reachable, Error: p.Error})
 	}
-	return ws.s.store.RecordHeartbeat(ctx, hb)
+	return toAPI(ws.s.store.RecordHeartbeat(ctx, hb))
 }
 
 // Register exchanges an enrollment token for a permanent credential and
@@ -175,7 +191,7 @@ func (ws *WorkerService) Register(ctx context.Context, token string, peer Peer) 
 		PeerID: peer.ID, PeerFQDN: peer.FQDN, Now: ws.s.opts.Now(),
 	})
 	if err != nil {
-		return nil, err
+		return nil, toAPI(err)
 	}
 	ws.s.log.Info("worker enrolled", "worker", w.ID, "peer", peer.ID, "fqdn", peer.FQDN)
 	return &api.RegisterResponse{WorkerID: w.ID, Credential: credential}, nil
