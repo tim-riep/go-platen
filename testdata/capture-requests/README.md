@@ -11,6 +11,30 @@ go run ./internal/brother/inspect/testpages testdata/capture-requests
 
 ## How to capture
 
+### With the script (recommended)
+
+[`capture.ps1`](capture.ps1) prints all cases and files the results. It needs
+[SumatraPDF](https://www.sumatrapdfreader.org) (prints PDFs at actual size
+from the command line) and an elevated PowerShell (Run as administrator), in
+this folder:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\capture.ps1
+```
+
+The script asks which installed printer's Brother driver to use and creates
+a printer "platen capture" with that driver on a port that writes to a file,
+so nothing goes to a real printer. For each case it resets the printer to
+the driver defaults, prints the PDF and stores `capture.prn`, `source.pdf`
+and `settings.txt` in `testdata/captures/<folder>/`. For resolution, toner
+save, paper source and media type it opens the driver's printing preferences
+and asks you to change that one setting, and afterwards to set it back.
+Existing captures are skipped; `-Only 03-calibration-600,08-stripes` captures
+selected cases and `-Force` captures again. At the end it offers to remove the
+capture printer.
+
+### By hand
+
 Use the Windows "Brother capture" printer on the `FILE:` port, as for the
 first two captures.
 
