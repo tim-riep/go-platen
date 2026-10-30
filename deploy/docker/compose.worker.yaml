@@ -1,0 +1,24 @@
+# A remote platen worker. It needs no published ports; it reaches the
+# server through the NetBird mesh and the printers through the host's
+# network (default bridge networking routes to the local network).
+services:
+  platen-worker:
+    image: ghcr.io/tim-riep/go-platen:latest
+    command: ["worker", "-config", "/etc/platen/worker.toml"]
+    restart: unless-stopped
+    stop_grace_period: 6m
+    volumes:
+      - ./worker.toml:/etc/platen/worker.toml:ro
+      - platen-worker-data:/var/lib/platen-worker
+    secrets:
+      - netbird_setup_key
+      - enrollment_token
+
+volumes:
+  platen-worker-data:
+
+secrets:
+  netbird_setup_key:
+    file: ./secrets/netbird-setup-key
+  enrollment_token:
+    file: ./secrets/enrollment-token

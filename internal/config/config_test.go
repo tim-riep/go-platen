@@ -62,3 +62,12 @@ func TestSetupKey(t *testing.T) {
 		t.Fatalf("missing key file: %q %v", k, err)
 	}
 }
+
+func TestDockerConfigs(t *testing.T) {
+	if _, err := LoadServer("../../deploy/docker/server.toml"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadWorker("../../deploy/docker/worker.toml"); err != nil {
+		t.Fatal(err)
+	}
+}

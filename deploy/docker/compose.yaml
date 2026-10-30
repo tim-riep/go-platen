@@ -1,0 +1,21 @@
+# platen server with the built-in worker. No ports are published: the
+# server listens only inside the NetBird mesh.
+services:
+  platen-server:
+    image: ghcr.io/tim-riep/go-platen:latest
+    command: ["server", "-config", "/etc/platen/server.toml"]
+    restart: unless-stopped
+    # Leave time to finish a print in progress on shutdown.
+    stop_grace_period: 6m
+    volumes:
+      - ./server.toml:/etc/platen/server.toml:ro
+      - platen-data:/var/lib/platen
+    secrets:
+      - netbird_setup_key
+
+volumes:
+  platen-data:
+
+secrets:
+  netbird_setup_key:
+    file: ./secrets/netbird-setup-key

@@ -13,7 +13,8 @@ interface, and workers accept no inbound connections at all.
 ## Features
 
 - One static, cgo-free binary for `linux/amd64` and `linux/arm64`, three
-  modes: `server` (optionally with a built-in worker), `worker`, `admin`
+  modes: `server` (optionally with a built-in worker), `worker`, `admin`;
+  also as a container image
 - Embedded NetBird in userspace mode, no root required, self-hosted or cloud
   management
 - Long polling leases, serial printing per printer, lease expiry with retry
@@ -72,6 +73,12 @@ curl -X POST "http://platen-server.netbird.cloud:8080/v1/printers/zebra/jobs?tit
      -H "Authorization: Bearer $APP_TOKEN" -H "Content-Type: application/vnd.zebra-zpl" \
      -H "Idempotency-Key: order-4711" --data-binary @label.zpl
 ```
+
+## Container image
+
+`ghcr.io/tim-riep/go-platen` (amd64 and arm64, built `FROM scratch`, non-root,
+no published ports needed). Compose examples for server and worker are in
+[deploy/docker](deploy/docker); see [docs/docker.md](docs/docker.md).
 
 ## Configuration
 

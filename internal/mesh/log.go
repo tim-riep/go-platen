@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // logWriter receives NetBird's log output (logrus text format, one entry
@@ -15,6 +16,10 @@ type logWriter struct {
 	log *slog.Logger
 	mu  sync.Mutex
 	buf []byte
+	// stopping is set while the client shuts down. NetBird then reports
+	// every connection it tears down as an error; those messages are
+	// logged at debug level.
+	stopping atomic.Bool
 }
 
 func newLogWriter(l *slog.Logger) *logWriter { return &logWriter{log: l} }
@@ -47,6 +52,9 @@ func (w *logWriter) emit(line string) {
 		level = slog.LevelWarn
 	case "error", "fatal", "panic":
 		level = slog.LevelError
+	}
+	if w.stopping.Load() {
+		level = slog.LevelDebug
 	}
 	msg, ok := fields["msg"]
 	if !ok {

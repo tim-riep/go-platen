@@ -65,8 +65,9 @@ type Options struct {
 // NetBird is the Network implementation backed by the embedded NetBird
 // client in userspace mode (no root required).
 type NetBird struct {
-	c   *embed.Client
-	log *slog.Logger
+	c      *embed.Client
+	log    *slog.Logger
+	logOut *logWriter
 }
 
 var _ Network = (*NetBird)(nil)
@@ -89,12 +90,13 @@ func Start(ctx context.Context, o Options) (*NetBird, error) {
 		return nil, fmt.Errorf("mesh: create config directory: %w", err)
 	}
 
+	logOut := newLogWriter(o.Logger.With("component", "netbird"))
 	opts := embed.Options{
 		DeviceName:          o.Hostname,
 		ManagementURL:       o.ManagementURL,
 		ConfigPath:          o.ConfigPath,
 		StatePath:           strings.TrimSuffix(o.ConfigPath, filepath.Ext(o.ConfigPath)) + ".state.json",
-		LogOutput:           newLogWriter(o.Logger.With("component", "netbird")),
+		LogOutput:           logOut,
 		LogLevel:            o.LogLevel,
 		BlockInbound:        o.BlockInbound,
 		DisableClientRoutes: true,
@@ -119,7 +121,7 @@ func Start(ctx context.Context, o Options) (*NetBird, error) {
 	if err := c.Start(sctx); err != nil {
 		return nil, fmt.Errorf("mesh: connect to netbird: %w", err)
 	}
-	n := &NetBird{c: c, log: o.Logger.With("component", "mesh")}
+	n := &NetBird{c: c, log: o.Logger.With("component", "mesh"), logOut: logOut}
 	if st, err := c.Status(); err == nil {
 		n.log.Info("connected to netbird", "ip", st.LocalPeerState.IP, "fqdn", st.LocalPeerState.FQDN)
 	}
@@ -176,6 +178,7 @@ func (n *NetBird) PeerForAddr(remoteAddr string) (string, string, bool) {
 
 // Stop disconnects from the mesh; ctx bounds the wait.
 func (n *NetBird) Stop(ctx context.Context) error {
+	n.logOut.stopping.Store(true)
 	return n.c.Stop(ctx)
 }
 

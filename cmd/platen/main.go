@@ -65,7 +65,11 @@ func main() {
 
 func newLogger(level string) *slog.Logger {
 	l, _ := config.ParseLevel(level)
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: l}))
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: l}))
+	// Libraries that use the standard log package (e.g. the QUIC transport
+	// of NetBird) then log through slog as well.
+	slog.SetDefault(log)
+	return log
 }
 
 func configFlag(name string, args []string) (string, error) {

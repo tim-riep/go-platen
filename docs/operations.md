@@ -17,7 +17,8 @@ sudo install -d -m 0750 -o root -g platen /etc/platen
 ```
 
 Example configurations: [`deploy/config/`](../deploy/config).
-systemd units: [`deploy/systemd/`](../deploy/systemd).
+systemd units: [`deploy/systemd/`](../deploy/systemd). To run platen in
+containers instead, see [docker.md](docker.md).
 
 Secret files belong to the `platen` user with mode `0600`:
 

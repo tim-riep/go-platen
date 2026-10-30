@@ -1,0 +1,22 @@
+# platen server configuration for the container image (see compose.yaml).
+log_level = "info"
+
+[netbird]
+management_url = "https://netbird.example.com"
+config_path = "/var/lib/platen/netbird/config.json"
+# Docker secret; or set PLATEN_NETBIRD_SETUP_KEY. Needed for the first start.
+setup_key_file = "/run/secrets/netbird_setup_key"
+hostname = "platen-server"
+port = 8080
+log_level = "warn"
+
+[server]
+database = "/var/lib/platen/platen.db"
+spool_dir = "/var/lib/platen/spool"
+# Generate with: docker run --rm ghcr.io/tim-riep/go-platen hash-token -generate
+admin_token_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
+[local_worker]
+enabled = true
+name = "built-in worker"
+journal_dir = "/var/lib/platen/journal"

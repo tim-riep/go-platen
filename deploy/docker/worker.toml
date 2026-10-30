@@ -1,0 +1,16 @@
+# platen worker configuration for the container image (see compose.worker.yaml).
+log_level = "info"
+
+[netbird]
+management_url = "https://netbird.example.com"
+config_path = "/var/lib/platen-worker/netbird/config.json"
+setup_key_file = "/run/secrets/netbird_setup_key"
+hostname = "platen-worker-site1"
+log_level = "warn"
+
+[worker]
+server_url = "http://platen-server.netbird.selfhosted:8080"
+credential_file = "/var/lib/platen-worker/credential"
+journal_dir = "/var/lib/platen-worker/journal"
+# Single-use token for the first start; or set PLATEN_ENROLLMENT_TOKEN.
+enrollment_token_file = "/run/secrets/enrollment_token"

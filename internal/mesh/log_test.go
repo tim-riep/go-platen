@@ -26,3 +26,13 @@ func TestParseLogfmt(t *testing.T) {
 		t.Fatalf("%v", f)
 	}
 }
+
+func TestLogWriterStopping(t *testing.T) {
+	var buf bytes.Buffer
+	w := newLogWriter(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	w.stopping.Store(true)
+	w.Write([]byte("level=error msg=\"context canceled\"\n"))
+	if buf.Len() != 0 {
+		t.Fatalf("error during shutdown not demoted: %s", buf.String())
+	}
+}

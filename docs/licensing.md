@@ -82,3 +82,12 @@ THIRD_PARTY_LICENSES. This needs to be resolved by obtaining the build
 configuration from the go-pdfium maintainers, or by building `pdfium.wasm`
 ourselves from a documented configuration and loading it with
 `webassembly.InitWithWASM`. The binary was deliberately not inspected.
+
+## Container image
+
+The runtime image is built `FROM scratch` (see [docker.md](docker.md)). Besides
+the platen binary and its notices it contains only Mozilla's CA certificate
+bundle as packaged by Debian (`ca-certificates`, MPL-2.0, unmodified, with
+its copyright file), which platen needs for TLS to the NetBird management
+server. No base image packages (such as `base-files`, `netbase` or `tzdata`)
+are included.
