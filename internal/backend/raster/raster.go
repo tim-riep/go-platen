@@ -61,12 +61,20 @@ func sharedRenderer() (*render.PDFRenderer, error) {
 // Backend is a raster backend.
 type Backend struct {
 	newEncoder func() Encoder
+	defaults   map[string]string
 	renderer   *render.PDFRenderer
 }
 
 // NewFactory returns a backend factory that renders PDFs and encodes them
 // with the encoder returned by newEncoder (one encoder per job).
 func NewFactory(name string, newEncoder func() Encoder) backend.Factory {
+	return NewFactoryWithDefaults(name, newEncoder, nil)
+}
+
+// NewFactoryWithDefaults is NewFactory with default printer options, used
+// where a printer option is not set, e.g. the dithering method that suits
+// the printer.
+func NewFactoryWithDefaults(name string, newEncoder func() Encoder, defaults map[string]string) backend.Factory {
 	return backend.Factory{
 		Name:         name,
 		ContentTypes: []string{ContentTypePDF},
@@ -75,7 +83,7 @@ func NewFactory(name string, newEncoder func() Encoder) backend.Factory {
 			if err != nil {
 				return nil, err
 			}
-			return &Backend{newEncoder: newEncoder, renderer: r}, nil
+			return &Backend{newEncoder: newEncoder, defaults: defaults, renderer: r}, nil
 		},
 	}
 }
@@ -84,7 +92,7 @@ func NewFactory(name string, newEncoder func() Encoder) backend.Factory {
 func (b *Backend) Accepts(contentType string) bool { return contentType == ContentTypePDF }
 
 // PageOptions derives the rendering options from the job options. Printer
-// options: "dither" (threshold, floyd-steinberg), "threshold" (1-255) and
+// options: "dither" (threshold, halftone, floyd-steinberg), "threshold" (1-255) and
 // "rotate" (auto, none).
 func PageOptions(opts backend.JobOptions) (render.PageOptions, error) {
 	paper, err := render.ParsePaper(opts.PaperSize)
@@ -119,6 +127,16 @@ func PageOptions(opts backend.JobOptions) (render.PageOptions, error) {
 
 // Print renders the PDF and encodes every page.
 func (b *Backend) Print(ctx context.Context, doc io.Reader, opts backend.JobOptions, out io.Writer) error {
+	if len(b.defaults) > 0 {
+		merged := make(map[string]string, len(b.defaults)+len(opts.Options))
+		for k, v := range b.defaults {
+			merged[k] = v
+		}
+		for k, v := range opts.Options {
+			merged[k] = v
+		}
+		opts.Options = merged
+	}
 	po, err := PageOptions(opts)
 	if err != nil {
 		return err

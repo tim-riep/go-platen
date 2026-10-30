@@ -20,8 +20,11 @@ import (
 const Name = "brother-raster"
 
 // Factory registers the backend: PDF rendered at printer resolution and
-// encoded for the Brother HL-2135W.
-var Factory = raster.NewFactory(Name, func() raster.Encoder { return &Encoder{} })
+// encoded for the Brother HL-2135W. Gray is rendered as a clustered-dot
+// halftone by default: the laser does not develop the isolated pixels of
+// error diffusion in light areas (test prints, 2026-10-30).
+var Factory = raster.NewFactoryWithDefaults(Name, func() raster.Encoder { return &Encoder{} },
+	map[string]string{"dither": string(render.Halftone)})
 
 // Page geometry (docs/brother-raster-format.md, sections 2.3 and 3).
 const (

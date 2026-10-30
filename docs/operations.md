@@ -133,7 +133,7 @@ Set with `-option key=value` on `printer create`/`update`:
 
 | Backend | Option | Values |
 | --- | --- | --- |
-| `pdf-to-raster`, `brother-raster` | `dither` | `threshold` (default), `floyd-steinberg` |
+| `pdf-to-raster`, `brother-raster` | `dither` | `threshold`, `halftone`, `floyd-steinberg`; default `halftone` for `brother-raster`, `threshold` for `pdf-to-raster` |
 | | `threshold` | `1`–`255` (default `128`) |
 | | `rotate` | `auto` (default), `none` |
 

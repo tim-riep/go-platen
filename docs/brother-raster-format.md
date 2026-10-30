@@ -304,7 +304,25 @@ a choice, it decides as follows:
 | Segments | runs of at least 16 blank rows in segments of up to 128 rows, combined in one escape sequence; all other rows in segments of at most 16 rows, each in its own escape sequence, ending early before a segment would exceed 3900 bytes |
 | Edits | longest runs of 3 or more equal bytes become repeated-byte edits, other changed bytes literal edits; edits are merged if a row would otherwise need more than 254 |
 | Copies | pages are repeated by the raster backend; `ESC&l1X` is always sent |
+| Gray | rendered with a clustered-dot halftone screen by default (see 3.1) |
 | Toner save, other resolutions, other paper sizes | not supported (no captures) |
+
+### 3.1 Gray levels
+
+The driver prints gray and colored areas as **clustered dots**: in
+`01-test-document`, the light gray shading of the drawing consists of dots of
+about 2×2 to 3×4 pixels on a regular lattice spanned by (8, 0) and (4, 4)
+pixels, a 45° screen of about 106 lines per inch at 600 dpi. This is image
+content, not part of the data format; the printer prints whatever bitmap it
+receives.
+
+Test prints on 2026-10-30 compared three renderings of the same page on the
+HL-2135W: with a threshold, light gray areas are missing; with
+Floyd–Steinberg error diffusion, the stream contained the light gray areas as
+isolated single pixels, but they did not appear on paper; with a clustered-dot
+screen of the same geometry as the driver's, the print showed no difference
+to the driver's print. platen's `brother-raster` backend therefore uses the
+clustered-dot screen (`dither=halftone`) by default.
 
 ## 4. Open questions
 

@@ -174,3 +174,63 @@ func TestParse(t *testing.T) {
 		t.Error("unknown dither accepted")
 	}
 }
+
+func TestHalftone(t *testing.T) {
+	g := image.NewGray(image.Rect(0, 0, 64, 64))
+	coverage := func(v uint8) float64 {
+		for i := range g.Pix {
+			g.Pix[i] = v
+		}
+		bm := ToBitmap(g, Halftone, 128, 600)
+		black := 0
+		for y := 0; y < 64; y++ {
+			for x := 0; x < 64; x++ {
+				if bm.Black(x, y) {
+					black++
+				}
+			}
+		}
+		return float64(black) / (64 * 64)
+	}
+	if c := coverage(0); c != 1 {
+		t.Errorf("black: coverage %.2f", c)
+	}
+	if c := coverage(255); c != 0 {
+		t.Errorf("white: coverage %.2f", c)
+	}
+	prev := -1.0
+	for v := 255; v >= 0; v -= 15 {
+		c := coverage(uint8(v))
+		if c < prev {
+			t.Fatalf("coverage not monotonic at gray %d", v)
+		}
+		if d := c - (255-float64(v))/255; d > 0.06 || d < -0.06 {
+			t.Errorf("gray %d: coverage %.2f", v, c)
+		}
+		prev = c
+	}
+	// Light gray must form clusters, not isolated pixels: at about 15 %
+	// coverage most black pixels have a black neighbor.
+	for i := range g.Pix {
+		g.Pix[i] = 215
+	}
+	bm := ToBitmap(g, Halftone, 128, 600)
+	lonely, black := 0, 0
+	for y := 1; y < 63; y++ {
+		for x := 1; x < 63; x++ {
+			if !bm.Black(x, y) {
+				continue
+			}
+			black++
+			if !bm.Black(x-1, y) && !bm.Black(x+1, y) && !bm.Black(x, y-1) && !bm.Black(x, y+1) {
+				lonely++
+			}
+		}
+	}
+	if black == 0 || lonely*10 > black {
+		t.Errorf("light gray: %d of %d black pixels isolated", lonely, black)
+	}
+	if d, _ := ParseDither("clustered"); d != Halftone {
+		t.Error(d)
+	}
+}

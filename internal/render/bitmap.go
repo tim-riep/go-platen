@@ -4,6 +4,8 @@ package render
 import (
 	"fmt"
 	"image"
+	"math"
+	"sort"
 	"strings"
 )
 
@@ -44,9 +46,13 @@ const (
 	// Threshold maps every pixel darker than the threshold to black. It
 	// keeps text and barcodes sharp.
 	Threshold Dither = "threshold"
-	// FloydSteinberg is error diffusion; it reproduces gray areas and
-	// photos better.
+	// FloydSteinberg is error diffusion. It scatters single pixels, which
+	// suits inkjet printers but often does not develop on laser printers.
 	FloydSteinberg Dither = "floyd-steinberg"
+	// Halftone is an ordered clustered-dot screen at 45 degrees: gray
+	// becomes clumps of pixels that grow with darkness, which laser
+	// printers reproduce reliably. Black and white areas stay solid.
+	Halftone Dither = "halftone"
 )
 
 // ParseDither parses a dithering method name; empty means Threshold.
@@ -56,8 +62,10 @@ func ParseDither(s string) (Dither, error) {
 		return Threshold, nil
 	case FloydSteinberg, "error-diffusion", "diffusion":
 		return FloydSteinberg, nil
+	case Halftone, "clustered":
+		return Halftone, nil
 	}
-	return "", fmt.Errorf("unknown dithering method %q (use %q or %q)", s, Threshold, FloydSteinberg)
+	return "", fmt.Errorf("unknown dithering method %q (use %q, %q or %q)", s, Threshold, Halftone, FloydSteinberg)
 }
 
 // ToBitmap converts a grayscale image (0 = black, 255 = white) to a bitmap.
@@ -66,8 +74,12 @@ func ToBitmap(g *image.Gray, method Dither, threshold uint8, dpi int) *Bitmap {
 	r := g.Bounds()
 	w, h := r.Dx(), r.Dy()
 	bm := NewBitmap(w, h, dpi)
-	if method == FloydSteinberg {
+	switch method {
+	case FloydSteinberg:
 		diffuse(g, bm, threshold)
+		return bm
+	case Halftone:
+		screen(g, bm)
 		return bm
 	}
 	for y := 0; y < h; y++ {
@@ -116,6 +128,62 @@ func diffuse(g *image.Gray, bm *Bitmap, threshold uint8) {
 		cur, next = next, cur
 		for i := range next {
 			next[i] = 0
+		}
+	}
+}
+
+// The halftone screen repeats every screenSize pixels in both directions.
+// Its dots sit on a 45 degree lattice spanned by (4, 4) and (4, -4), which
+// at 600 dpi is a screen of about 106 lines per inch; each 32-pixel cell
+// renders 33 gray levels.
+const screenSize = 8
+
+// screenOrder holds, for each position in the screen tile, the rank at
+// which it turns black as the gray darkens (0 first).
+var screenOrder = func() [screenSize][screenSize]int {
+	type cell struct {
+		x, y int
+		spot float64
+	}
+	cells := make([]cell, 0, screenSize*screenSize)
+	for y := 0; y < screenSize; y++ {
+		for x := 0; x < screenSize; x++ {
+			// Lattice coordinates of the pixel center.
+			u := (float64(x) + 0.5 + float64(y) + 0.5) / 8
+			v := (float64(x) + 0.5 - float64(y) - 0.5) / 8
+			fu, fv := u-math.Floor(u), v-math.Floor(v)
+			// Round dot spot function: highest at the dot center.
+			spot := math.Cos(2*math.Pi*fu) + math.Cos(2*math.Pi*fv)
+			cells = append(cells, cell{x, y, spot})
+		}
+	}
+	sort.SliceStable(cells, func(i, j int) bool { return cells[i].spot > cells[j].spot })
+	var order [screenSize][screenSize]int
+	for rank, c := range cells {
+		order[c.y][c.x] = rank
+	}
+	return order
+}()
+
+// screen applies the clustered-dot halftone screen.
+func screen(g *image.Gray, bm *Bitmap) {
+	const n = screenSize * screenSize
+	var limits [screenSize][screenSize]int
+	for y := range limits {
+		for x := range limits[y] {
+			// A pixel turns black when its darkness exceeds the limit of
+			// its rank; rank 0 turns black first.
+			limits[y][x] = (2*screenOrder[y][x] + 1) * 255 / (2 * n)
+		}
+	}
+	for y := 0; y < bm.Height; y++ {
+		row := g.Pix[y*g.Stride : y*g.Stride+bm.Width]
+		out := bm.Row(y)
+		lim := &limits[y%screenSize]
+		for x, v := range row {
+			if 255-int(v) > lim[x%screenSize] {
+				out[x>>3] |= 0x80 >> (x & 7)
+			}
 		}
 	}
 }

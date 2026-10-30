@@ -175,10 +175,21 @@ PDFs are rendered with PDFium compiled to WebAssembly (go-pdfium on wazero),
 so the binary stays cgo-free. PDFium runs without file system access.
 Each page is scaled to fit the printer's paper size at its resolution
 (default A4, 600 dpi), centered, and landscape pages are rotated to portrait
-(`rotate=none` disables this). The grayscale render is reduced to 1 bit by a
-threshold (`dither=threshold`, default, with `threshold=1..255`) or by
-Floyd–Steinberg error diffusion (`dither=floyd-steinberg`). These are printer
-options, set by the administrator per printer.
+(`rotate=none` disables this). The grayscale render is reduced to 1 bit by
+one of three methods, set per printer with the `dither` option:
+
+- `threshold`: every pixel darker than `threshold` (1–255, default 128)
+  becomes black. Crisp text and barcodes; light gray disappears.
+- `halftone`: an ordered clustered-dot screen at 45° (about 106 lines per
+  inch at 600 dpi). Gray becomes clumps of dots that grow with darkness,
+  which laser printers reproduce reliably; black and white stay solid.
+- `floyd-steinberg`: error diffusion. It scatters isolated pixels, which
+  laser printers often do not develop in light areas.
+
+Each raster backend chooses its default: `brother-raster` uses `halftone`,
+because test prints on the HL-2135W lost light gray with error diffusion and
+the driver itself prints gray as clustered dots; `pdf-to-raster` uses
+`threshold`.
 
 ## Security
 

@@ -469,3 +469,41 @@ func writtenBytes(t *testing.T, enc []byte) []bool {
 	}
 	return w
 }
+
+func TestHalftoneIsDefault(t *testing.T) {
+	b, err := Factory.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A page filled with 25 % gray.
+	pdf := makePDF(595.276, 841.890, "0.75 g 0 0 595.276 841.890 re f")
+	coverage := func(opts map[string]string) float64 {
+		var out bytes.Buffer
+		if err := b.Print(context.Background(), bytes.NewReader(pdf), backend.JobOptions{PaperSize: "A4", ResolutionDPI: 600, Options: opts}, &out); err != nil {
+			t.Fatal(err)
+		}
+		s, err := inspect.Parse(out.Bytes())
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows, _, err := inspect.DecodeRows(s.Pages[0], RowBytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		black := 0
+		for _, r := range rows[1000:1100] {
+			for _, v := range r[100:500] {
+				for ; v != 0; v &= v - 1 {
+					black++
+				}
+			}
+		}
+		return float64(black) / (100 * 400 * 8)
+	}
+	if c := coverage(nil); c < 0.15 || c > 0.35 {
+		t.Errorf("default: gray rendered with coverage %.2f, want about 0.25", c)
+	}
+	if c := coverage(map[string]string{"dither": "threshold"}); c != 0 {
+		t.Errorf("threshold option ignored: coverage %.2f", c)
+	}
+}

@@ -690,7 +690,7 @@ components:
         options:
           type: object
           additionalProperties: { type: string }
-          description: "Backend options, e.g. dither (threshold, floyd-steinberg), threshold (1-255), rotate (auto, none)"
+          description: "Backend options, e.g. dither (threshold, halftone, floyd-steinberg), threshold (1-255), rotate (auto, none)"
         status: { type: string, enum: [ready, paused] }
     AdminPrinter:
       allOf:
