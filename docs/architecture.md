@@ -42,6 +42,8 @@ platen admin    command line client for the admin API
 | `internal/backend/raw` | Pass-through backend |
 | `internal/backend/raster` | PDF → bitmap → page encoder backends (`pdf-to-raster`) |
 | `internal/render` | PDF rendering with PDFium (WebAssembly), dithering |
+| `internal/brother` | Brother HL-2135W raster encoder |
+| `internal/brother/inspect` | Analysis tool for captured Brother print data |
 | `internal/printer` | Raw TCP connection to the printer |
 | `internal/admin` | `platen admin` commands |
 | `internal/api` | JSON wire types shared by all of the above |
@@ -159,11 +161,12 @@ backends and to reject documents a printer's backend cannot print.
 | --- | --- | --- |
 | `raw` | anything | the document unchanged, repeated per copy (e.g. ZPL) |
 | `pdf-to-raster` | `application/pdf` | 1-bit bitmaps as PBM (P4) pages |
+| `brother-raster` | `application/pdf` | Brother HL-2135W print data (A4, 600 dpi), see [brother-raster-format.md](brother-raster-format.md) |
 
 Raster backends share the PDF renderer and differ only in their
 `raster.Encoder`. A printer language that prints bitmaps (e.g. a Brother
-raster encoder or PCL raster) implements `Encoder` and is registered with
-`raster.NewFactory`. Other languages (PostScript, PCL with text) implement
+raster encoder (`internal/brother`) or PCL raster) implements `Encoder` and
+is registered with `raster.NewFactory`. Other languages (PostScript, PCL with text) implement
 `Backend` directly.
 
 ### PDF rendering

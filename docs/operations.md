@@ -133,9 +133,13 @@ Set with `-option key=value` on `printer create`/`update`:
 
 | Backend | Option | Values |
 | --- | --- | --- |
-| `pdf-to-raster` | `dither` | `threshold` (default), `floyd-steinberg` |
+| `pdf-to-raster`, `brother-raster` | `dither` | `threshold` (default), `floyd-steinberg` |
 | | `threshold` | `1`–`255` (default `128`) |
 | | `rotate` | `auto` (default), `none` |
+
+`brother-raster` supports A4 paper at 600 dpi only (`-paper A4 -dpi 600`);
+see [brother-raster-format.md](brother-raster-format.md) for what the
+captures cover.
 
 ## Monitoring and logs
 

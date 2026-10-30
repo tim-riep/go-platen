@@ -5,6 +5,10 @@ streams produced with the official Brother driver and on the public HP
 PJL/PCL specifications. Captures are provided by the project owner; the
 Brother driver is not installed or run by contributors.
 
+Analysis results: [docs/brother-raster-format.md](../../docs/brother-raster-format.md).
+The encoder tests compare the encoder with every capture found here and are
+skipped when there are none.
+
 For each capture, add a directory `NN-short-name/` containing:
 
 - `source.pdf`: the document that was printed
