@@ -1,0 +1,19 @@
+# platen worker configuration. Printers are defined on the server.
+log_level = "info"
+
+[netbird]
+management_url = "https://netbird.example.com"
+config_path = "/var/lib/platen-worker/netbird/config.json"
+# Or set PLATEN_NETBIRD_SETUP_KEY. Needed for the first start only.
+setup_key_file = "/etc/platen-worker/setup-key"
+hostname = "platen-worker-site1"
+log_level = "warn"
+
+[worker]
+# The server's NetBird DNS name and mesh port.
+server_url = "http://platen-server.netbird.selfhosted:8080"
+credential_file = "/var/lib/platen-worker/credential"
+journal_dir = "/var/lib/platen-worker/journal"
+# Single-use token for the first start (or PLATEN_ENROLLMENT_TOKEN), created
+# with: platen admin worker enroll <worker-id>
+enrollment_token_file = "/etc/platen-worker/enrollment-token"

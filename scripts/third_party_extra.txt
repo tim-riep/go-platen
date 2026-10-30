@@ -6,3 +6,11 @@ modernc.org/sqlite contains the SQLite library translated to Go. SQLite is
 in the public domain. modernc.org/libc contains code derived from musl libc
 (MIT) and other components; see the LICENSE-3RD-PARTY.md files shipped with
 those modules for the complete list of notices.
+
+github.com/cloudflare/circl is replaced by its fork codeberg.org/cunicu/circl
+(BSD-3-Clause) and github.com/mailru/easyjson by github.com/netbirdio/easyjson
+(MIT), as required by NetBird. The source of these modules is available at
+the fork locations.
+
+Only the BSD-3-Clause licensed parts of NetBird (github.com/netbirdio/netbird)
+are used; none of its AGPL-3.0 licensed directories are included.

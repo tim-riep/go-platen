@@ -1,0 +1,4 @@
+module=github.com/jackpal/go-nat-pmp
+version=v1.0.2
+license=Apache-2.0
+source=https://github.com/jackpal/go-nat-pmp

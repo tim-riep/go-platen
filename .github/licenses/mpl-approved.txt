@@ -1,0 +1,6 @@
+# Modules licensed under MPL-2.0 that were reviewed and approved for
+# inclusion in the platen binary. They are pulled in by NetBird's client
+# and are used unmodified. One module path per line.
+github.com/hashicorp/errwrap
+github.com/hashicorp/go-multierror
+github.com/hashicorp/go-version

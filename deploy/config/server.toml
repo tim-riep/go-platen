@@ -1,0 +1,35 @@
+# platen server configuration.
+log_level = "info"
+
+[netbird]
+# Self-hosted NetBird management server; omit for NetBird's default.
+management_url = "https://netbird.example.com"
+# Persistent peer identity. Keep this file; deleting it creates a new peer.
+config_path = "/var/lib/platen/netbird/config.json"
+# The setup key is only read from this file or from the environment variable
+# PLATEN_NETBIRD_SETUP_KEY, never from this configuration. It is needed for
+# the first start only.
+setup_key_file = "/etc/platen/setup-key"
+# Device name in the mesh; the server is reachable as
+# <hostname>.<netbird dns domain>.
+hostname = "platen-server"
+# Port in the mesh. platen opens no port on any host interface.
+port = 8080
+log_level = "warn"
+
+[server]
+database = "/var/lib/platen/platen.db"
+spool_dir = "/var/lib/platen/spool"
+# Generate with: platen hash-token -generate
+admin_token_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+max_document_bytes = 67108864
+job_retention = "168h"
+cleanup_interval = "10m"
+lease_duration = "60s"
+max_attempts = 3
+enrollment_token_ttl = "24h"
+
+[local_worker]
+enabled = true
+name = "built-in worker"
+journal_dir = "/var/lib/platen/journal"

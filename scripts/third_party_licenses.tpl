@@ -2,7 +2,8 @@
 ================================================================================
 {{ .Name }} {{ .Version }}
 License: {{ .LicenseName }}
-{{ .LicenseURL }}
+License file: {{ .LicenseURL }}
+Source: https://{{ .Name }} (version {{ .Version }})
 --------------------------------------------------------------------------------
 {{ .LicenseText }}
 {{ end }}
