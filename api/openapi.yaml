@@ -1,0 +1,785 @@
+openapi: 3.1.0
+info:
+  title: platen
+  version: "1"
+  summary: Print management server with distributed print workers.
+  description: |
+    platen is reachable only inside the NetBird mesh. There are three
+    strictly separated API families, each with its own credentials:
+
+    - Application API (`/v1`): app client bearer token (`plt_app_...`).
+    - Worker API (`/worker/v1`): worker credential (`plt_wrk_...`); requests
+      must also come from the NetBird peer the worker was bound to during
+      enrollment.
+    - Admin API (`/admin/v1`): admin token (`plt_adm_...`).
+
+    Errors are always JSON: `{"error": {"code": "...", "message": "..."}}`.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: http://platen-server.netbird.selfhosted:8080
+    description: Server in the NetBird mesh (example DNS name)
+
+tags:
+  - name: health
+  - name: application
+  - name: worker
+  - name: admin
+
+paths:
+  /v1/health:
+    get:
+      tags: [health]
+      summary: Health check (no authentication)
+      security: []
+      responses:
+        "200":
+          description: Server is up
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  /v1/printers:
+    get:
+      tags: [application]
+      summary: List the printers the app client may use
+      security: [{ appToken: [] }]
+      responses:
+        "200":
+          description: Printers with status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [printers]
+                properties:
+                  printers:
+                    type: array
+                    items: { $ref: "#/components/schemas/Printer" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /v1/printers/{id}/jobs:
+    post:
+      tags: [application]
+      summary: Submit a print job
+      description: |
+        The request body is the document. Its format is given by the
+        Content-Type header and must be accepted by the printer's backend.
+        Retries with the same Idempotency-Key return the existing job.
+      security: [{ appToken: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ID"
+        - name: copies
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 999, default: 1 }
+        - name: title
+          in: query
+          schema: { type: string, maxLength: 255 }
+        - name: Idempotency-Key
+          in: header
+          description: Unique per app client; deduplicates retries.
+          schema: { type: string, maxLength: 255 }
+        - name: Content-Type
+          in: header
+          required: true
+          schema: { type: string, examples: [application/pdf, application/vnd.zebra-zpl] }
+      requestBody:
+        required: true
+        content:
+          "*/*":
+            schema: { type: string, format: binary }
+      responses:
+        "202":
+          description: Job accepted (or existing job for a replayed idempotency key)
+          headers:
+            Idempotent-Replayed:
+              description: "`true` if an existing job was returned"
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "422":
+          description: Idempotency key reused for a different request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+
+  /v1/jobs/{id}:
+    get:
+      tags: [application]
+      summary: Get a job of this app client
+      security: [{ appToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200":
+          description: The job
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [application]
+      summary: Cancel a job (only while queued)
+      security: [{ appToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200":
+          description: The canceled job
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /worker/v1/register:
+    post:
+      tags: [worker]
+      summary: Exchange an enrollment token for the permanent credential
+      description: |
+        Binds the worker to the NetBird peer of the connection. The
+        credential is returned only once.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+                version: { type: string }
+      responses:
+        "200":
+          description: Credential
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [worker_id, credential]
+                properties:
+                  worker_id: { type: string }
+                  credential: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /worker/v1/config:
+    get:
+      tags: [worker]
+      summary: The worker's own printers
+      security: [{ workerCredential: [] }]
+      responses:
+        "200":
+          description: Configuration
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkerConfig" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /worker/v1/lease:
+    post:
+      tags: [worker]
+      summary: Lease the next job (long polling, at most about 30 s)
+      security: [{ workerCredential: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                printers:
+                  description: Restrict to these (idle) printers; empty means all.
+                  type: array
+                  items: { type: string }
+                wait_seconds: { type: integer, minimum: 0, maximum: 30 }
+      responses:
+        "200":
+          description: A job with its lease
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lease" }
+        "204":
+          description: No job became available within the wait time
+
+  /worker/v1/jobs/{id}/document:
+    get:
+      tags: [worker]
+      summary: Download the document of a leased job
+      security: [{ workerCredential: [] }]
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200":
+          description: The original document
+          headers:
+            X-Document-SHA256:
+              schema: { type: string }
+          content:
+            "*/*":
+              schema: { type: string, format: binary }
+        "409": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+
+  /worker/v1/jobs/{id}/progress:
+    post:
+      tags: [worker]
+      summary: Extend the lease and mark the job as printing
+      security: [{ workerCredential: [] }]
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200":
+          description: New lease expiry
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [expires_at]
+                properties:
+                  expires_at: { type: string, format: date-time }
+        "409":
+          description: The lease was lost
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+
+  /worker/v1/jobs/{id}/complete:
+    post:
+      tags: [worker]
+      summary: Report a job as printed
+      description: Accepted from the last lease holder even after its lease expired.
+      security: [{ workerCredential: [] }]
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "204": { description: Recorded }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /worker/v1/jobs/{id}/fail:
+    post:
+      tags: [worker]
+      summary: Report a failed print attempt
+      security: [{ workerCredential: [] }]
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [error, retryable]
+              properties:
+                error: { type: string }
+                retryable:
+                  type: boolean
+                  description: Requeue the job until its maximum number of attempts.
+                uncertain:
+                  type: boolean
+                  description: |
+                    The job may have reached the printer (e.g. the worker
+                    crashed while sending). It is set to failed and never retried.
+      responses:
+        "204": { description: Recorded }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /worker/v1/heartbeat:
+    post:
+      tags: [worker]
+      summary: Liveness and printer reachability
+      security: [{ workerCredential: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version, printers]
+              properties:
+                version: { type: string }
+                printers:
+                  type: array
+                  items:
+                    type: object
+                    required: [printer_id, reachable]
+                    properties:
+                      printer_id: { type: string }
+                      reachable: { type: boolean }
+                      error: { type: string }
+      responses:
+        "204": { description: Recorded }
+
+  /admin/v1/workers:
+    get:
+      tags: [admin]
+      summary: List workers
+      security: [{ adminToken: [] }]
+      responses:
+        "200":
+          description: Workers
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkerList" }
+    post:
+      tags: [admin]
+      summary: Create a worker
+      security: [{ adminToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkerRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Worker" }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/v1/workers/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      tags: [admin]
+      summary: Get a worker
+      security: [{ adminToken: [] }]
+      responses:
+        "200":
+          description: Worker
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Worker" }
+    patch:
+      tags: [admin]
+      summary: Update a worker
+      security: [{ adminToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WorkerRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Worker" }
+    delete:
+      tags: [admin]
+      summary: Delete a worker (it must have no printers)
+      security: [{ adminToken: [] }]
+      responses:
+        "204": { description: Deleted }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/v1/workers/{id}/enrollment-tokens:
+    post:
+      tags: [admin]
+      summary: Create a single-use enrollment token
+      security: [{ adminToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ttl_seconds: { type: integer, minimum: 1 }
+      responses:
+        "201":
+          description: The token, shown only once
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, worker_id, expires_at]
+                properties:
+                  token: { type: string }
+                  worker_id: { type: string }
+                  expires_at: { type: string, format: date-time }
+
+  /admin/v1/printers:
+    get:
+      tags: [admin]
+      summary: List printers
+      security: [{ adminToken: [] }]
+      parameters:
+        - name: worker
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Printers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdminPrinter" }
+    post:
+      tags: [admin]
+      summary: Create a printer and its queue
+      security: [{ adminToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PrinterRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPrinter" }
+  /admin/v1/printers/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      tags: [admin]
+      summary: Get a printer
+      security: [{ adminToken: [] }]
+      responses:
+        "200":
+          description: Printer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPrinter" }
+    patch:
+      tags: [admin]
+      summary: Update a printer
+      security: [{ adminToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PrinterRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPrinter" }
+    delete:
+      tags: [admin]
+      summary: Delete a printer (it must have no unfinished jobs)
+      security: [{ adminToken: [] }]
+      responses:
+        "204": { description: Deleted }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /admin/v1/app-clients:
+    get:
+      tags: [admin]
+      summary: List app clients
+      security: [{ adminToken: [] }]
+      responses:
+        "200":
+          description: App clients
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AppClient" }
+    post:
+      tags: [admin]
+      summary: Create an app client; the response contains its token once
+      security: [{ adminToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AppClientRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppClient" }
+  /admin/v1/app-clients/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      tags: [admin]
+      summary: Get an app client
+      security: [{ adminToken: [] }]
+      responses:
+        "200":
+          description: App client
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppClient" }
+    patch:
+      tags: [admin]
+      summary: Update an app client
+      security: [{ adminToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AppClientRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppClient" }
+    delete:
+      tags: [admin]
+      summary: Delete an app client
+      security: [{ adminToken: [] }]
+      responses:
+        "204": { description: Deleted }
+  /admin/v1/app-clients/{id}/rotate-token:
+    post:
+      tags: [admin]
+      summary: Replace the token of an app client
+      security: [{ adminToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200":
+          description: The app client with its new token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppClient" }
+
+  /admin/v1/jobs:
+    get:
+      tags: [admin]
+      summary: List jobs, newest first
+      security: [{ adminToken: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/JobStatus" } }
+        - { name: printer, in: query, schema: { type: string } }
+        - { name: app_client, in: query, schema: { type: string } }
+        - { name: worker, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 1000, default: 100 } }
+      responses:
+        "200":
+          description: Jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdminJob" }
+  /admin/v1/jobs/{id}:
+    get:
+      tags: [admin]
+      summary: Get a job
+      security: [{ adminToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200":
+          description: Job
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminJob" }
+  /admin/v1/jobs/{id}/cancel:
+    post:
+      tags: [admin]
+      summary: Cancel a queued job
+      security: [{ adminToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200":
+          description: Canceled job
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminJob" }
+        "409": { $ref: "#/components/responses/Error" }
+
+components:
+  securitySchemes:
+    appToken: { type: http, scheme: bearer, description: App client token }
+    workerCredential: { type: http, scheme: bearer, description: Worker credential, bound to a NetBird peer }
+    adminToken: { type: http, scheme: bearer, description: Admin token }
+
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorBody" }
+
+  schemas:
+    ErrorBody:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [bad_request, unauthorized, forbidden, not_found, conflict, already_exists,
+                     document_too_large, unsupported_media_type, idempotency_key_mismatch,
+                     invalid_token, internal_error, unavailable]
+            message: { type: string }
+    Health:
+      type: object
+      properties:
+        status: { type: string, const: ok }
+        version: { type: string }
+    JobStatus:
+      type: string
+      enum: [queued, leased, printing, done, failed, canceled]
+    Printer:
+      type: object
+      required: [id, name, status, reachable, paper_size, resolution_dpi]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        status: { type: string, enum: [ready, paused] }
+        reachable: { type: [boolean, "null"], description: Last reported reachability; null if never reported }
+        reachability_checked_at: { type: string, format: date-time }
+        paper_size: { type: string }
+        resolution_dpi: { type: integer }
+        content_types: { type: array, items: { type: string } }
+    Job:
+      type: object
+      required: [id, printer_id, status, copies, content_type, size, document_sha256, attempts, created_at, updated_at]
+      properties:
+        id: { type: string }
+        printer_id: { type: string }
+        status: { $ref: "#/components/schemas/JobStatus" }
+        copies: { type: integer }
+        title: { type: string }
+        content_type: { type: string }
+        size: { type: integer }
+        document_sha256: { type: string }
+        attempts: { type: integer }
+        error: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+    AdminJob:
+      allOf:
+        - $ref: "#/components/schemas/Job"
+        - type: object
+          properties:
+            app_client_id: { type: string }
+            idempotency_key: { type: string }
+            lease_holder: { type: string }
+            lease_expires_at: { type: string, format: date-time }
+            max_attempts: { type: integer }
+    PrinterConfig:
+      type: object
+      required: [id, name, address, backend, paper_size, resolution_dpi, status]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        address: { type: string, description: "host:port in the worker's local network" }
+        backend: { type: string, examples: [raw, pdf-to-raster] }
+        paper_size: { type: string, examples: [A4, Letter] }
+        resolution_dpi: { type: integer }
+        options:
+          type: object
+          additionalProperties: { type: string }
+          description: "Backend options, e.g. dither (threshold, floyd-steinberg), threshold (1-255), rotate (auto, none)"
+        status: { type: string, enum: [ready, paused] }
+    AdminPrinter:
+      allOf:
+        - $ref: "#/components/schemas/PrinterConfig"
+        - type: object
+          properties:
+            worker_id: { type: string }
+            reachable: { type: [boolean, "null"] }
+            reachability_error: { type: string }
+            reachability_checked_at: { type: string, format: date-time }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+    PrinterRequest:
+      type: object
+      description: On create, id, worker_id, address and backend are required. On update, omitted fields stay unchanged.
+      properties:
+        id: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,63}$" }
+        name: { type: string }
+        worker_id: { type: string }
+        address: { type: string }
+        backend: { type: string }
+        paper_size: { type: string, default: A4 }
+        resolution_dpi: { type: integer, default: 600, minimum: 72, maximum: 2400 }
+        options: { type: object, additionalProperties: { type: string } }
+        status: { type: string, enum: [ready, paused], default: ready }
+    WorkerConfig:
+      type: object
+      required: [worker_id, name, printers, lease_seconds]
+      properties:
+        worker_id: { type: string }
+        name: { type: string }
+        printers: { type: array, items: { $ref: "#/components/schemas/PrinterConfig" } }
+        lease_seconds: { type: integer }
+    Lease:
+      type: object
+      required: [job, printer, expires_at]
+      properties:
+        job:
+          type: object
+          required: [id, copies, content_type, size, document_sha256, attempt]
+          properties:
+            id: { type: string }
+            copies: { type: integer }
+            title: { type: string }
+            content_type: { type: string }
+            size: { type: integer }
+            document_sha256: { type: string }
+            attempt: { type: integer }
+        printer: { $ref: "#/components/schemas/PrinterConfig" }
+        expires_at: { type: string, format: date-time }
+    Worker:
+      type: object
+      required: [id, name, enrolled, created_at]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        location: { type: string }
+        enrolled: { type: boolean }
+        peer_id: { type: string, description: NetBird peer identity (WireGuard public key) bound at enrollment }
+        peer_fqdn: { type: string }
+        version: { type: string }
+        last_heartbeat: { type: string, format: date-time }
+        enrolled_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+    WorkerList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Worker" } }
+    WorkerRequest:
+      type: object
+      properties:
+        id: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,63}$", description: Required on create; "local" is reserved }
+        name: { type: string }
+        location: { type: string }
+    AppClient:
+      type: object
+      required: [id, name, all_printers, printers, created_at, updated_at]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        all_printers: { type: boolean }
+        printers: { type: array, items: { type: string } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        token: { type: string, description: Only in the response that created or rotated the token }
+    AppClientRequest:
+      type: object
+      properties:
+        id: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,63}$" }
+        name: { type: string }
+        all_printers: { type: boolean }
+        printers: { type: array, items: { type: string } }

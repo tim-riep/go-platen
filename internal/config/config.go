@@ -68,6 +68,8 @@ func (n NetBird) SetupKey() (string, error) {
 }
 
 func (n *NetBird) validate(defaultHost string) error {
+	n.SetupKeyFile = os.ExpandEnv(n.SetupKeyFile)
+	n.ConfigPath = os.ExpandEnv(n.ConfigPath)
 	if n.ConfigPath == "" {
 		return errors.New("netbird.config_path is required")
 	}
@@ -193,10 +195,59 @@ func LoadWorker(path string) (*Worker, error) {
 		return nil, errors.New("worker.server_url, worker.credential_file and worker.journal_dir are required")
 	}
 	w.ServerURL = strings.TrimSuffix(w.ServerURL, "/")
+	w.EnrollmentTokenFile = os.ExpandEnv(w.EnrollmentTokenFile)
 	if _, err := ParseLevel(c.LogLevel); err != nil {
 		return nil, err
 	}
 	return c, nil
+}
+
+// Admin is the configuration of "platen admin". The admin CLI joins the
+// mesh as its own peer.
+type Admin struct {
+	LogLevel  string  `toml:"log_level"`
+	NetBird   NetBird `toml:"netbird"`
+	ServerURL string  `toml:"server_url"`
+	// AdminTokenFile holds the admin token; PLATEN_ADMIN_TOKEN overrides it.
+	AdminTokenFile string `toml:"admin_token_file"`
+}
+
+// LoadAdmin reads and validates an admin CLI configuration.
+func LoadAdmin(path string) (*Admin, error) {
+	c := &Admin{}
+	if err := decode(path, c); err != nil {
+		return nil, err
+	}
+	if err := c.NetBird.validate("platen-admin"); err != nil {
+		return nil, err
+	}
+	if c.ServerURL == "" {
+		return nil, errors.New("server_url is required")
+	}
+	c.ServerURL = strings.TrimSuffix(c.ServerURL, "/")
+	c.AdminTokenFile = os.ExpandEnv(c.AdminTokenFile)
+	if c.LogLevel == "" {
+		c.LogLevel = "warn"
+	}
+	if _, err := ParseLevel(c.LogLevel); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// AdminToken returns the admin token from the environment or the file.
+func (c *Admin) AdminToken() (string, error) {
+	if v := strings.TrimSpace(os.Getenv(EnvAdminToken)); v != "" {
+		return v, nil
+	}
+	if c.AdminTokenFile == "" {
+		return "", errors.New("no admin token: set " + EnvAdminToken + " or admin_token_file")
+	}
+	b, err := os.ReadFile(c.AdminTokenFile)
+	if err != nil {
+		return "", fmt.Errorf("read admin token: %w", err)
+	}
+	return strings.TrimSpace(string(b)), nil
 }
 
 // ParseLevel parses a log level name; empty means info.

@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tim-riep/go-platen/internal/admin"
 	"github.com/tim-riep/go-platen/internal/app"
 	"github.com/tim-riep/go-platen/internal/auth"
 	"github.com/tim-riep/go-platen/internal/config"
@@ -169,5 +170,31 @@ func hashToken(args []string) error {
 }
 
 func runAdmin(args []string) error {
-	return errors.New("admin commands are not implemented yet")
+	fs := flag.NewFlagSet("admin", flag.ContinueOnError)
+	path := fs.String("config", "", "path to the admin TOML configuration file")
+	fs.Usage = func() { fmt.Fprint(os.Stderr, admin.Usage) }
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *path == "" || fs.NArg() < 2 {
+		fs.Usage()
+		return errors.New("-config and a command are required")
+	}
+	cfg, err := config.LoadAdmin(*path)
+	if err != nil {
+		return err
+	}
+	token, err := cfg.AdminToken()
+	if err != nil {
+		return err
+	}
+	log := newLogger(cfg.LogLevel)
+	return withMesh(cfg.NetBird, true, log, func(ctx context.Context, n mesh.Network) error {
+		c := &admin.Client{BaseURL: cfg.ServerURL, HTTP: n.HTTPClient(), Token: token}
+		err := admin.Run(ctx, c, fs.Args(), os.Stdout)
+		if errors.Is(err, admin.ErrUsage) {
+			fmt.Fprint(os.Stderr, admin.Usage)
+		}
+		return err
+	})
 }

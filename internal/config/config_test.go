@@ -22,6 +22,18 @@ func TestExampleConfigs(t *testing.T) {
 	if w.Worker.ServerURL != "http://platen-server.netbird.selfhosted:8080" {
 		t.Fatalf("worker: %+v", w)
 	}
+	t.Setenv("HOME", "/home/admin")
+	a, err := LoadAdmin("../../deploy/config/admin.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.AdminTokenFile != "/home/admin/.config/platen/admin-token" || a.NetBird.ConfigPath != "/home/admin/.config/platen/netbird.json" {
+		t.Fatalf("admin: %+v", a)
+	}
+	t.Setenv(EnvAdminToken, "tok")
+	if tok, _ := a.AdminToken(); tok != "tok" {
+		t.Fatal(tok)
+	}
 }
 
 func TestUnknownKeysRejected(t *testing.T) {

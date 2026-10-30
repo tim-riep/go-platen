@@ -1,0 +1,54 @@
+[Unit]
+Description=platen print management server
+Documentation=https://github.com/tim-riep/go-platen
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=platen
+Group=platen
+ExecStart=/usr/local/bin/platen server -config /etc/platen/server.toml
+Restart=on-failure
+RestartSec=5s
+# Leave time for the built-in worker to finish a print in progress and for
+# NetBird to disconnect.
+TimeoutStopSec=6min
+KillSignal=SIGTERM
+
+# /var/lib/platen holds the database, spool, journal and NetBird identity.
+StateDirectory=platen
+StateDirectoryMode=0700
+ConfigurationDirectory=platen
+# Secrets (setup key, enrollment token) are files in /etc/platen owned by
+# the platen user with mode 0600; see docs/operations.md. They are only
+# needed for the first start.
+
+# Hardening. platen runs NetBird in userspace mode and needs no privileges.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# MemoryDenyWriteExecute is not set: the PDF renderer runs PDFium in the
+# wazero WebAssembly runtime, which compiles to native code at run time.
+CapabilityBoundingSet=
+AmbientCapabilities=
+# AF_NETLINK lets NetBird enumerate local interfaces for connectivity
+# candidates.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

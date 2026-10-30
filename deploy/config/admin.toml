@@ -1,0 +1,13 @@
+# platen admin CLI configuration. The CLI joins the mesh as its own peer,
+# e.g. on an administrator's machine, and calls the server's admin API.
+log_level = "warn"
+server_url = "http://platen-server.netbird.selfhosted:8080"
+# Or set PLATEN_ADMIN_TOKEN.
+admin_token_file = "$HOME/.config/platen/admin-token"
+
+[netbird]
+management_url = "https://netbird.example.com"
+config_path = "$HOME/.config/platen/netbird.json"
+setup_key_file = "$HOME/.config/platen/setup-key"
+hostname = "platen-admin"
+log_level = "warn"
