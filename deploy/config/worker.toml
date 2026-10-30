@@ -11,7 +11,7 @@ log_level = "warn"
 
 [worker]
 # The server's NetBird DNS name and mesh port.
-server_url = "http://platen-server.netbird.selfhosted:8080"
+server_url = "http://platen-server.netbird.selfhosted"
 credential_file = "/var/lib/platen-worker/credential"
 journal_dir = "/var/lib/platen-worker/journal"
 # Single-use token for the first start (or PLATEN_ENROLLMENT_TOKEN), created

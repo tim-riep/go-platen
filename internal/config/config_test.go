@@ -12,14 +12,14 @@ func TestExampleConfigs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.NetBird.Port != 8080 || s.Server.JobRetention.Duration != 168*time.Hour || !s.LocalWorker.Enabled {
+	if s.NetBird.Port != 80 || s.Server.JobRetention.Duration != 168*time.Hour || !s.LocalWorker.Enabled {
 		t.Fatalf("server: %+v", s)
 	}
 	w, err := LoadWorker("../../deploy/config/worker.toml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w.Worker.ServerURL != "http://platen-server.netbird.selfhosted:8080" {
+	if w.Worker.ServerURL != "http://platen-server.netbird.selfhosted" {
 		t.Fatalf("worker: %+v", w)
 	}
 	t.Setenv("HOME", "/home/admin")

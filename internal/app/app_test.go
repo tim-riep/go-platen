@@ -96,7 +96,7 @@ func TestServerAndWorkerEndToEnd(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	admin := auth.NewToken(auth.PrefixAdmin)
 	scfg := &config.Server{
-		NetBird: config.NetBird{Port: 8080},
+		NetBird: config.NetBird{Port: 80},
 		Server: config.ServerOpts{
 			Database: filepath.Join(dir, "db"), SpoolDir: filepath.Join(dir, "spool"),
 			AdminTokenHash: auth.Hash(admin), MaxDocumentSize: 1 << 20,

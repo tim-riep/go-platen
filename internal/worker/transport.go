@@ -82,7 +82,7 @@ func (t *InProcess) Heartbeat(ctx context.Context, req api.HeartbeatRequest) err
 
 // HTTPTransport talks to the worker API of a remote server.
 type HTTPTransport struct {
-	// BaseURL is e.g. "http://platen-server.netbird.cloud:8080".
+	// BaseURL is e.g. "http://platen-server.netbird.cloud".
 	BaseURL    string
 	Client     *http.Client
 	Credential string

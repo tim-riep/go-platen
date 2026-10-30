@@ -18,7 +18,7 @@ info:
     name: Apache-2.0
     identifier: Apache-2.0
 servers:
-  - url: http://platen-server.netbird.selfhosted:8080
+  - url: http://platen-server.netbird.selfhosted
     description: Server in the NetBird mesh (example DNS name)
 
 tags:

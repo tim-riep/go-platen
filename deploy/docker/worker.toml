@@ -9,7 +9,7 @@ hostname = "platen-worker-site1"
 log_level = "warn"
 
 [worker]
-server_url = "http://platen-server.netbird.selfhosted:8080"
+server_url = "http://platen-server.netbird.selfhosted"
 credential_file = "/var/lib/platen-worker/credential"
 journal_dir = "/var/lib/platen-worker/journal"
 # Single-use token for the first start; or set PLATEN_ENROLLMENT_TOKEN.

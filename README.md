@@ -43,7 +43,7 @@ in-process transport. Details: [docs/architecture.md](docs/architecture.md).
 ## NetBird setup
 
 In short: create the groups `platen-server`, `print-workers`, `erp` and
-`platen-admins`, one setup key per role (not ephemeral), and allow TCP 8080
+`platen-admins`, one setup key per role (not ephemeral), and allow TCP 80
 to `platen-server` from `erp` (application API), `print-workers` (worker
 API) and `platen-admins` (admin API). The setup key is read from
 `PLATEN_NETBIRD_SETUP_KEY` or a file, never from the TOML configuration, and
@@ -69,7 +69,7 @@ platen admin -config admin.toml client create erp -printers zebra   # app token
 platen worker -config /etc/platen/worker.toml
 
 # Print from the ERP
-curl -X POST "http://platen-server.netbird.cloud:8080/v1/printers/zebra/jobs?title=Label" \
+curl -X POST "http://platen-server.netbird.cloud/v1/printers/zebra/jobs?title=Label" \
      -H "Authorization: Bearer $APP_TOKEN" -H "Content-Type: application/vnd.zebra-zpl" \
      -H "Idempotency-Key: order-4711" --data-binary @label.zpl
 ```

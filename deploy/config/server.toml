@@ -14,7 +14,7 @@ setup_key_file = "/etc/platen/setup-key"
 # <hostname>.<netbird dns domain>.
 hostname = "platen-server"
 # Port in the mesh. platen opens no port on any host interface.
-port = 8080
+port = 80
 log_level = "warn"
 
 [server]

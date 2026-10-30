@@ -123,7 +123,7 @@ type Worker struct {
 // they come from the server.
 type WorkerOpts struct {
 	// ServerURL is the server address in the mesh, e.g.
-	// "http://platen-server.netbird.cloud:8080".
+	// "http://platen-server.netbird.cloud".
 	ServerURL           string `toml:"server_url"`
 	CredentialFile      string `toml:"credential_file"`
 	JournalDir          string `toml:"journal_dir"`
@@ -156,7 +156,7 @@ func LoadServer(path string) (*Server, error) {
 		return nil, err
 	}
 	if c.NetBird.Port == 0 {
-		c.NetBird.Port = 8080
+		c.NetBird.Port = 80
 	}
 	s := &c.Server
 	if s.Database == "" || s.SpoolDir == "" {

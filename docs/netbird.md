@@ -39,13 +39,13 @@ key file can be deleted.
 
 ## Policies
 
-Create access policies (TCP, port `8080` or your `netbird.port`):
+Create access policies (TCP, port `80` or your `netbird.port`):
 
 | Policy | Source | Destination | Port | Purpose |
 | --- | --- | --- | --- | --- |
-| erp-to-platen | `erp` | `platen-server` | 8080/TCP | application API `/v1` |
-| workers-to-platen | `print-workers` | `platen-server` | 8080/TCP | worker API `/worker/v1` |
-| admins-to-platen | `platen-admins` | `platen-server` | 8080/TCP | admin API `/admin/v1` |
+| erp-to-platen | `erp` | `platen-server` | 80/TCP | application API `/v1` |
+| workers-to-platen | `print-workers` | `platen-server` | 80/TCP | worker API `/worker/v1` |
+| admins-to-platen | `platen-admins` | `platen-server` | 80/TCP | admin API `/admin/v1` |
 
 Remove the default "All to All" policy, or at least make sure it does not
 include these groups. Workers and admin peers block inbound connections
@@ -59,8 +59,8 @@ The policies reduce the attack surface; they do not replace these checks.
 ## DNS
 
 Workers and the admin CLI address the server by its NetBird DNS name, e.g.
-`http://platen-server.netbird.cloud:8080` (cloud) or
-`http://platen-server.<your dns domain>:8080` (self-hosted). The name
+`http://platen-server.netbird.cloud` (cloud) or
+`http://platen-server.<your dns domain>` (self-hosted). The name
 is the server's `netbird.hostname`. If DNS is not available in your setup,
 the server's mesh IP works as well; it stays stable because the peer
 identity is persistent.

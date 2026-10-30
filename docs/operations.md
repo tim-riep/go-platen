@@ -57,7 +57,7 @@ address. `GET /v1/health` (no authentication) shows whether it is up.
 | `netbird.config_path` | required | persistent NetBird identity |
 | `netbird.setup_key_file` | | setup key file (or `PLATEN_NETBIRD_SETUP_KEY`) |
 | `netbird.hostname` | `platen-server` | device name and DNS label in the mesh |
-| `netbird.port` | `8080` | listen port in the mesh |
+| `netbird.port` | `80` | listen port in the mesh |
 | `netbird.log_level` | `warn` | NetBird log level |
 | `server.database` | required | SQLite database file |
 | `server.spool_dir` | required | document directory |
@@ -119,7 +119,7 @@ and is bound to its NetBird peer. Both secret files can then be deleted.
 | Key | Meaning |
 | --- | --- |
 | `netbird.*` | as for the server; `port` is not used |
-| `worker.server_url` | the server in the mesh, e.g. `http://platen-server.netbird.cloud:8080` |
+| `worker.server_url` | the server in the mesh, e.g. `http://platen-server.netbird.cloud` |
 | `worker.credential_file` | where the permanent credential is stored |
 | `worker.journal_dir` | the delivery journal |
 | `worker.enrollment_token_file` | token for the first start |
