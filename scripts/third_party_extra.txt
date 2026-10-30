@@ -1,0 +1,8 @@
+
+Additional notices
+------------------
+
+modernc.org/sqlite contains the SQLite library translated to Go. SQLite is
+in the public domain. modernc.org/libc contains code derived from musl libc
+(MIT) and other components; see the LICENSE-3RD-PARTY.md files shipped with
+those modules for the complete list of notices.

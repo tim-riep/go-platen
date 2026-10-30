@@ -34,6 +34,10 @@ jobs:
         run: go install github.com/google/go-licenses/v2@latest
       - name: license check
         run: go-licenses check ./... --allowed_licenses=Apache-2.0,MIT,BSD-2-Clause,BSD-3-Clause,ISC
+      - name: THIRD_PARTY_LICENSES up to date
+        run: |
+          ./scripts/third-party-licenses.sh
+          git diff --exit-code THIRD_PARTY_LICENSES
 
   build:
     runs-on: ubuntu-latest
