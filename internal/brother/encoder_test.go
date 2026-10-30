@@ -167,9 +167,18 @@ func checkStructure(t *testing.T, s *inspect.Stream) {
 		total := 0
 		for _, sg := range p.Segments {
 			total += sg.Rows
-			trivial := len(sg.Data) == sg.Rows+2
-			if sg.Rows < 1 || sg.Rows > maxTrivialRows || (!trivial && sg.Rows > maxEditRows) || len(sg.Data) > maxSegmentSize+RowBytes*2 {
-				t.Errorf("page %d: segment with %d rows and %d bytes", n+1, sg.Rows, len(sg.Data))
+			blank := len(sg.Data) == sg.Rows+2 && bytes.Count(sg.Data[2:], []byte{blankRow}) == sg.Rows
+			if sg.Rows < 1 || sg.Rows > maxBlankRows || (!blank && sg.Rows > maxEditRows) || len(sg.Data) > maxSegmentSize+RowBytes*2 {
+				t.Errorf("page %d: segment with %d rows and %d bytes (blank only: %v)", n+1, sg.Rows, len(sg.Data), blank)
+			}
+		}
+		if len(p.Segments) != p.RasterGroups {
+			// Only blank segments are combined in one escape sequence;
+			// checked indirectly: combined segments must be blank.
+			for _, sg := range p.Segments {
+				if sg.Rows > maxEditRows && bytes.Count(sg.Data[2:], []byte{blankRow}) != sg.Rows {
+					t.Errorf("page %d: long segment with non-blank rows", n+1)
+				}
 			}
 		}
 		if total != PageRows {
@@ -322,5 +331,36 @@ func TestExtractRow(t *testing.T) {
 	// pixels 0, 7 and 23 of the extracted row; nothing beyond the bitmap.
 	if dst[0] != 0x81 || dst[1] != 0 || dst[2] != 0x01 || dst[3] != 0 {
 		t.Fatalf("% x", dst)
+	}
+}
+
+// Rows that repeat the previous row must not form segments longer than 16
+// rows; the printer stopped printing on such a segment.
+func TestRepeatedRowsInShortSegments(t *testing.T) {
+	w, h := mustA4(t).Pixels(DPI)
+	bm := render.NewBitmap(w, h, DPI)
+	// A vertical line 2000 rows long: one edited row, then repeats.
+	for y := 500; y < 2500; y++ {
+		bm.Set(1000, y)
+	}
+	s, err := inspect.Parse(encodePages(t, "line", []*render.Bitmap{bm}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkStructure(t, s)
+	for _, sg := range s.Pages[0].Segments {
+		if bytes.Count(sg.Data[2:], []byte{repeatRow}) > 0 && sg.Rows > maxEditRows {
+			t.Fatalf("segment of %d rows contains repeated rows", sg.Rows)
+		}
+	}
+	rows, _, err := inspect.DecodeRows(s.Pages[0], RowBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	x := 1000 - OriginX
+	for y := 500 - OriginY; y < 2500-OriginY; y++ {
+		if rows[y][x/8]&(0x80>>(x%8)) == 0 {
+			t.Fatalf("row %d: line missing", y)
+		}
 	}
 }

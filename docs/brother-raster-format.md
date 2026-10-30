@@ -168,17 +168,22 @@ captures has a decoding error or unused bytes).
 Observed segmentation by the driver (all 12 pages):
 
 - A segment holds 1 to 128 rows.
-- Segments whose rows are all blank or repeated rows (one byte per row, see
-  2.2) hold up to 128 rows. Consecutive segments of this kind are combined in
-  one escape sequence with lower case `w`. Example: three segments of 128,
-  128 and 42 blank rows at the top of `01-test-document`.
-- Segments that contain rows with edits hold at most 16 rows and are sent in
-  their own escape sequence. Most segments have exactly 16 rows; shorter
-  segments occur at transitions between blank and printed areas.
+- **Only segments consisting entirely of blank rows** (`0xFF`, see 2.2) hold
+  more than 16 rows, up to 128 (613 of 613 such segments in both captures).
+  Consecutive blank segments are combined in one escape sequence with lower
+  case `w` (123 of 123 combined sequences contain only blank rows). Example:
+  three segments of 128, 128 and 42 blank rows at the top of
+  `01-test-document`.
+- All other segments, including those that consist only of repeated rows
+  (`0x00`), hold at most 16 rows and are sent in their own escape sequence.
+  Example: after the segment with the first rule, the unchanged rows of the
+  vertical frame lines in `01-test-document` are sent as five repeat-only
+  segments of 16, 16, 16, 16 and 6 rows. Most segments have exactly 16 rows; shorter segments occur at
+  transitions between blank and printed areas.
 - The largest segment is 3911 bytes (`02-sample-11-pages`).
 
-Only segments of one byte per row were combined; a segment containing edits
-always started its own `ESC*b` sequence.
+Whether the printer requires this limit is not known. platen follows it
+because the driver does.
 
 ### 2.2 Row encoding
 
@@ -272,7 +277,7 @@ a choice, it decides as follows:
 | PJL header | same commands and line endings as observed, without the `PRINTLOG` lines (job log entries); the job name is the job title, ASCII only, without the unexplained prefix byte |
 | Page setup | the observed byte sequences for the first and the following pages |
 | Page geometry | A4 at 600 dpi only; 6816 rows; source bitmap origin at (76, 100) pixels; row length 602 bytes (4816 pixels, the paper width minus 76 pixels on both sides, rounded up to whole bytes) |
-| Segments | edited rows in segments of at most 16 rows, each in its own escape sequence; a segment also ends before it would exceed 3900 bytes; runs of blank or repeated rows in segments of up to 128 rows, combined in one escape sequence |
+| Segments | runs of at least 16 blank rows in segments of up to 128 rows, combined in one escape sequence; all other rows in segments of at most 16 rows, each in its own escape sequence, ending early before a segment would exceed 3900 bytes |
 | Edits | longest runs of 3 or more equal bytes become repeated-byte edits, other changed bytes literal edits; edits are merged if a row would otherwise need more than 254 |
 | First row of a page | encoded against a blank seed row |
 | Copies | pages are repeated by the raster backend; `ESC&l1X` is always sent |

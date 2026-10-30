@@ -38,7 +38,9 @@ const (
 
 // Segmentation limits (section 3).
 const (
-	maxTrivialRows = 128
+	// Only segments of blank rows may hold more than 16 rows; the
+	// printer stops printing when other segments do.
+	maxBlankRows   = 128
 	maxEditRows    = 16
 	maxSegmentSize = 3900
 	maxEdits       = 254
@@ -303,15 +305,15 @@ func allZero(b []byte) bool {
 // writeSegments groups encoded rows into segments and writes the raster
 // transfer commands (section 2.1 and 3).
 func writeSegments(w *bufio.Writer, rows [][]byte) {
-	trivialRun := func(i int) int {
+	blankRun := func(i int) int {
 		n := 0
-		for i+n < len(rows) && len(rows[i+n]) == 1 {
+		for i+n < len(rows) && len(rows[i+n]) == 1 && rows[i+n][0] == blankRow {
 			n++
 		}
 		return n
 	}
-	var pending [][][]byte // trivial segments waiting to be combined
-	flushTrivial := func() {
+	var pending [][][]byte // blank segments waiting to be combined
+	flushBlank := func() {
 		for k, seg := range pending {
 			if k == 0 {
 				w.WriteString("\x1b*b")
@@ -325,22 +327,22 @@ func writeSegments(w *bufio.Writer, rows [][]byte) {
 		pending = nil
 	}
 	for i := 0; i < len(rows); {
-		if t := trivialRun(i); t >= maxEditRows || i+t == len(rows) {
+		if t := blankRun(i); t >= maxEditRows || (t > 0 && i+t == len(rows)) {
 			for t > 0 {
-				n := min(t, maxTrivialRows)
+				n := min(t, maxBlankRows)
 				pending = append(pending, rows[i:i+n])
 				i += n
 				t -= n
 			}
 			continue
 		}
-		flushTrivial()
+		flushBlank()
 		n, size := 0, 2
 		for i+n < len(rows) && n < maxEditRows {
 			if n > 0 && size+len(rows[i+n]) > maxSegmentSize {
 				break
 			}
-			if n > 0 && trivialRun(i+n) >= maxEditRows {
+			if n > 0 && blankRun(i+n) >= maxEditRows {
 				break
 			}
 			size += len(rows[i+n])
@@ -350,7 +352,7 @@ func writeSegments(w *bufio.Writer, rows [][]byte) {
 		writeSegment(w, rows[i:i+n], 'W')
 		i += n
 	}
-	flushTrivial()
+	flushBlank()
 }
 
 func writeSegment(w *bufio.Writer, rows [][]byte, term byte) {
