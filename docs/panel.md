@@ -3,7 +3,15 @@
 The server serves a web panel on its port in the mesh (default 80), e.g.
 `http://platen-server.<your NetBird DNS domain>/`. It offers everything the
 admin API offers (workers and enrollment tokens, printers and their options,
-app clients and their tokens, jobs) plus the management of panel users. Like
+app clients and their tokens, jobs, printing a file) plus the management of
+panel users.
+
+**Printing a file**: admins can print a file on any printer with *Print…* in
+the printer list or *Print a file* under Jobs. The file is sent as it is, as
+the ERP does: PDF for `pdf-to-raster` and `brother-raster` printers, the
+printer's own language (e.g. ZPL) for `raw` printers. The job records
+`panel:<NetBird IP>` as its submitter; the admin API and
+`platen admin job print <printer> <file>` record `admin`. Like
 the APIs, it is reachable only inside the NetBird mesh. It is part of the
 binary and loads nothing from the internet.
 

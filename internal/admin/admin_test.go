@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -129,6 +130,24 @@ func TestCommands(t *testing.T) {
 	run(t, c, "panel-user list", &pus)
 	if len(pus.Items) != 1 {
 		t.Fatalf("panel users: %+v", pus)
+	}
+
+	// Print a file through the admin API.
+	doc := filepath.Join(t.TempDir(), "label.pdf")
+	os.WriteFile(doc, []byte("%PDF-1.4 test"), 0o600)
+	var job api.Job
+	run(t, c, "job print zebra "+doc+" -copies 2", &job)
+	if job.Status != "queued" || job.Copies != 2 || job.Title != "label.pdf" || job.ContentType != "application/pdf" || job.Size != 13 {
+		t.Fatalf("printed job: %+v", job)
+	}
+	var aj api.AdminJob
+	run(t, c, "job get "+job.ID, &aj)
+	if aj.AppClientID != "admin" {
+		t.Fatalf("submitter %q", aj.AppClientID)
+	}
+	run(t, c, "job cancel "+job.ID, nil)
+	if err := Run(context.Background(), c, []string{"job", "print", "zebra"}, io.Discard); !errors.Is(err, ErrUsage) {
+		t.Fatalf("missing file: %v", err)
 	}
 
 	run(t, c, "printer delete zebra", nil)

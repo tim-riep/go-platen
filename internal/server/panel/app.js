@@ -45,6 +45,20 @@ async function api(method, path, body) {
   return data;
 }
 
+// upload sends a file as request body, as the application API expects.
+async function upload(path, file) {
+  let type = file.type;
+  if (!type) type = file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "application/octet-stream";
+  const res = await fetch("/panel/v1" + path, { method: "POST", headers: { "X-Platen-Panel": "1", "Content-Type": type }, body: file });
+  let data = null;
+  try { data = await res.json(); } catch (_) { /* empty body */ }
+  if (!res.ok) {
+    const e = (data && data.error) || {};
+    throw new APIError(res.status, e.code || "error", e.message || res.statusText);
+  }
+  return data;
+}
+
 function fmtTime(s) {
   if (!s) return "never";
   const d = new Date(s);
@@ -139,8 +153,11 @@ function openDialog(title, fields, submit, okLabel) {
       body.append(box);
       inputs[f.name] = { checklist: checks };
       continue;
+    } else if (f.type === "file") {
+      input = el("input", { id, name: f.name, type: "file", required: f.required, accept: f.accept });
     } else {
-      input = el("input", { id, name: f.name, type: f.type || "text", required: f.required, placeholder: f.placeholder || "", readonly: f.readonly });
+      input = el("input", { id, name: f.name, type: f.type || "text", required: f.required, placeholder: f.placeholder || "", readonly: f.readonly,
+        min: f.min, max: f.max });
       input.value = f.value === undefined || f.value === null ? "" : f.value;
     }
     inputs[f.name] = input;
@@ -150,6 +167,7 @@ function openDialog(title, fields, submit, okLabel) {
     const out = {};
     for (const [k, i] of Object.entries(inputs)) {
       if (i.checklist) out[k] = i.checklist.filter(c => c.checked).map(c => c.value);
+      else if (i.type === "file") out[k] = i.files[0] || null;
       else if (i.type === "checkbox") out[k] = i.checked;
       else out[k] = i.value.trim();
     }
@@ -213,6 +231,7 @@ function printerTable(printers, workers, withActions) {
     el("td", {}, p.backend, el("div", { class: "muted" }, p.paper_size + ", " + p.resolution_dpi + " dpi")),
     el("td", {}, printerStatus(p), p.reachability_error ? el("div", { class: "muted" }, p.reachability_error) : null),
     el("td", { class: "actions" }, withActions ? [
+      adminButton("Print…", () => printFile(p, printers), "link"),
       adminButton("Edit", () => editPrinter(p, workers), "link"),
       adminButton(p.status === "paused" ? "Resume" : "Pause", async () => {
         await api("PATCH", "/printers/" + encodeURIComponent(p.id), { status: p.status === "paused" ? "ready" : "paused" });
@@ -265,6 +284,32 @@ async function editPrinter(p, workers) {
     else await api("PATCH", "/printers/" + encodeURIComponent(p.id), body);
     render();
   });
+}
+
+// printFile sends a document to a printer, like the ERP does. Without a
+// printer the dialog offers a choice.
+function printFile(printer, printers) {
+  const fields = [];
+  if (!printer) {
+    fields.push({ name: "printer", label: "Printer", type: "select", value: (printers[0] || {}).id,
+      options: printers.map(p => [p.id, p.name + " (" + p.backend + ")"]) });
+  }
+  fields.push(
+    { name: "file", label: "File", type: "file", required: true,
+      hint: "PDF for pdf-to-raster and brother-raster printers; raw printers receive the file unchanged (e.g. ZPL)." },
+    { name: "copies", label: "Copies", type: "number", value: 1, min: 1, max: 999 },
+    { name: "title", label: "Title", placeholder: "defaults to the file name" });
+  openDialog(printer ? "Print on " + printer.name : "Print a file", fields, async v => {
+    if (!v.file) throw new Error("Choose a file.");
+    const id = printer ? printer.id : v.printer;
+    const params = new URLSearchParams({ copies: v.copies || "1", title: v.title || v.file.name });
+    const job = await upload("/printers/" + encodeURIComponent(id) + "/jobs?" + params, v.file);
+    state.tab = "jobs";
+    state.jobFilter = {};
+    history.replaceState(null, "", "#jobs");
+    render();
+    notice("Job " + job.id + " queued for " + id + ".");
+  }, "Print");
 }
 
 async function viewWorkers() {
@@ -324,7 +369,7 @@ async function viewJobs() {
   const filter = (name, options) => el("select", { "aria-label": name, onchange: e => { state.jobFilter = Object.assign({}, f, { [name]: e.target.value }); render(); } },
     options.map(([v, l]) => el("option", { value: v, selected: (f[name] || "") === v }, l)));
   return el("div", {},
-    head("Jobs", el("div", { class: "filters" },
+    head("Jobs", adminButton("Print a file", () => printFile(null, printers.items)), el("div", { class: "filters" },
       filter("status", [["", "All states"], ...Object.keys(jobKinds).map(s => [s, s])]),
       filter("printer", [["", "All printers"], ...printers.items.map(p => [p.id, p.name])]))),
     table(["Job", "Printer", "Status", "Document", "Created", ""], jobs.items.map(j => el("tr", {},
@@ -437,6 +482,7 @@ async function render() {
 async function start() {
   for (const b of document.querySelectorAll("#tabs button")) {
     b.addEventListener("click", () => {
+      notice("");
       state.tab = b.dataset.tab;
       history.replaceState(null, "", "#" + state.tab);
       render();

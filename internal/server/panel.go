@@ -207,6 +207,7 @@ func (s *Server) panelRoutes(mux *http.ServeMux) {
 	edit("PATCH /panel/v1/app-clients/{id}", s.adminUpdateAppClient)
 	edit("DELETE /panel/v1/app-clients/{id}", s.adminDeleteAppClient)
 	edit("POST /panel/v1/app-clients/{id}/rotate-token", s.adminRotateAppClientToken)
+	edit("POST /panel/v1/printers/{id}/jobs", s.adminSubmitJob)
 	view("GET /panel/v1/jobs", s.adminListJobs)
 	view("GET /panel/v1/jobs/{id}", s.adminGetJob)
 	edit("POST /panel/v1/jobs/{id}/cancel", s.adminCancelJob)

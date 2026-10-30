@@ -101,13 +101,31 @@ func (s *Server) accepts(p *store.Printer, contentType string) ([]string, bool) 
 }
 
 func (s *Server) submitJob(w http.ResponseWriter, r *http.Request, c *store.AppClient) {
-	ctx := r.Context()
 	printerID := r.PathValue("id")
 	if !c.MayUse(printerID) {
 		// Do not reveal whether the printer exists.
 		writeError(w, errNotFound("printer %q not found", printerID))
 		return
 	}
+	s.queueDocument(w, r, c.ID, printerID)
+}
+
+// adminSubmitJob prints a document from the admin API or the panel. The
+// job's submitter is recorded instead of an app client: "admin" for the
+// admin API, "panel:<NetBird IP>" for the panel.
+func (s *Server) adminSubmitJob(w http.ResponseWriter, r *http.Request) {
+	submitter := "admin"
+	if sess := panelSessionFrom(r.Context()); sess != nil {
+		submitter = "panel:" + sess.user.IP
+	}
+	s.queueDocument(w, r, submitter, r.PathValue("id"))
+}
+
+// queueDocument stores the request body as a new job for the printer. The
+// Content-Type header gives the document format; the query parameters
+// copies and title and the Idempotency-Key header are optional.
+func (s *Server) queueDocument(w http.ResponseWriter, r *http.Request, submitter, printerID string) {
+	ctx := r.Context()
 	p, err := s.store.GetPrinter(ctx, printerID)
 	if err != nil {
 		s.fail(w, r, err)
@@ -166,7 +184,7 @@ func (s *Server) submitJob(w http.ResponseWriter, r *http.Request, c *store.AppC
 	}
 	now := s.opts.Now()
 	j, created, err := s.store.CreateJob(ctx, &store.Job{
-		ID: id, QueueID: p.ID, AppClientID: c.ID, Status: store.JobQueued, Copies: copies, Title: title,
+		ID: id, QueueID: p.ID, AppClientID: submitter, Status: store.JobQueued, Copies: copies, Title: title,
 		ContentType: contentType, Size: size, DocumentHash: hash, IdempotencyKey: key,
 		MaxAttempts: s.opts.MaxAttempts, CreatedAt: now, UpdatedAt: now,
 	})
@@ -178,7 +196,7 @@ func (s *Server) submitJob(w http.ResponseWriter, r *http.Request, c *store.AppC
 		return
 	}
 	if created {
-		s.log.Info("job queued", "job", j.ID, "client", c.ID, "printer", p.ID, "content_type", contentType, "size", size)
+		s.log.Info("job queued", "job", j.ID, "client", submitter, "printer", p.ID, "content_type", contentType, "size", size)
 		s.notify.broadcast()
 	} else {
 		w.Header().Set("Idempotent-Replayed", "true")

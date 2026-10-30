@@ -622,6 +622,34 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/PanelUser" }
 
+  /admin/v1/printers/{id}/jobs:
+    post:
+      tags: [admin]
+      summary: Print a document as administrator
+      description: |
+        Like POST /v1/printers/{id}/jobs, without the printer permissions
+        of an app client. The job records "admin" as its submitter.
+      security: [{ adminToken: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ID"
+        - { name: copies, in: query, schema: { type: integer, minimum: 1, maximum: 999, default: 1 } }
+        - { name: title, in: query, schema: { type: string, maxLength: 255 } }
+        - { name: Content-Type, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          "*/*":
+            schema: { type: string, format: binary }
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "404": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+
   /admin/v1/jobs:
     get:
       tags: [admin]

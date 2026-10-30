@@ -12,6 +12,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -28,22 +30,28 @@ type Client struct {
 
 func (c *Client) do(ctx context.Context, method, path string, in, out any) error {
 	var body io.Reader
+	contentType := ""
 	if in != nil {
 		b, err := json.Marshal(in)
 		if err != nil {
 			return err
 		}
-		body = bytes.NewReader(b)
+		body, contentType = bytes.NewReader(b), "application/json"
 	}
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	return c.send(ctx, method, path, contentType, body, out)
+}
+
+// send sends a request with the given body and decodes a JSON response.
+func (c *Client) send(ctx context.Context, method, path, contentType string, body io.Reader, out any) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, body)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Token)
-	if in != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
@@ -104,6 +112,9 @@ Jobs:
   job list [-status S] [-printer P] [-client C] [-worker W] [-limit N]
   job get <id>
   job cancel <id>
+  job print <printer> <file> [-copies N] [-title T] [-type CONTENT-TYPE]
+                                          print a file; the type defaults by extension
+                                          (.pdf: application/pdf, else application/octet-stream)
 
 Output is JSON.
 `
@@ -385,6 +396,8 @@ func jobCmd(ctx context.Context, c *Client, action string, args []string) (any, 
 		var l api.List[api.AdminJob]
 		return l, c.do(ctx, http.MethodGet, p, nil, &l)
 	case "get", "cancel":
+	case "print":
+		return printFile(ctx, c, args)
 	default:
 		return nil, fmt.Errorf("%w: unknown job action %q", ErrUsage, action)
 	}
@@ -433,4 +446,39 @@ func panelUserCmd(ctx context.Context, c *Client, action string, args []string) 
 	default:
 		return u, c.do(ctx, http.MethodPost, p+"/reset-peer", nil, &u)
 	}
+}
+
+// printFile submits a file to a printer through the admin API.
+func printFile(ctx context.Context, c *Client, args []string) (any, error) {
+	fs := flag.NewFlagSet("job print", flag.ContinueOnError)
+	copies := fs.Int("copies", 1, "number of copies")
+	title := fs.String("title", "", "job title (default: the file name)")
+	contentType := fs.String("type", "", "content type of the file")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return nil, err
+	}
+	if len(pos) != 2 {
+		return nil, fmt.Errorf("%w: expected a printer and a file", ErrUsage)
+	}
+	printer, name := pos[0], pos[1]
+	f, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	if *contentType == "" {
+		*contentType = "application/octet-stream"
+		if strings.EqualFold(filepath.Ext(name), ".pdf") {
+			*contentType = "application/pdf"
+		}
+	}
+	if *title == "" {
+		*title = filepath.Base(name)
+	}
+	q := url.Values{}
+	q.Set("copies", fmt.Sprint(*copies))
+	q.Set("title", *title)
+	var j api.Job
+	return j, c.send(ctx, http.MethodPost, path("admin", "v1", "printers", printer, "jobs")+"?"+q.Encode(), *contentType, f, &j)
 }

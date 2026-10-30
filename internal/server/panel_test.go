@@ -115,6 +115,7 @@ func TestPanelRoles(t *testing.T) {
 	}
 	e.expect(e.panel("POST", "/workers", map[string]any{"id": "w9"}), 403)
 	e.expect(e.panel("GET", "/users", nil), 403)
+	e.expect(e.panel("POST", "/printers/p1/jobs", []byte("x"), "Content-Type", "text/plain"), 403)
 }
 
 func TestPanelAdminActions(t *testing.T) {
@@ -135,6 +136,21 @@ func TestPanelAdminActions(t *testing.T) {
 	if client.Token == "" {
 		t.Fatal("no app token")
 	}
+
+	// Printing a file from the panel.
+	var job api.Job
+	e.expect(e.panel("POST", "/printers/p1/jobs?copies=2&title=test.pdf", []byte("%PDF-1.4"), "Content-Type", "application/pdf"), 202).decode(t, &job)
+	if job.Status != "queued" || job.Copies != 2 || job.Title != "test.pdf" {
+		t.Fatalf("panel job %+v", job)
+	}
+	var aj api.AdminJob
+	e.expect(e.panel("GET", "/jobs/"+job.ID, nil), 200).decode(t, &aj)
+	if aj.AppClientID != "panel:127.0.0.1" {
+		t.Fatalf("submitter %q", aj.AppClientID)
+	}
+	e.expect(e.panel("POST", "/printers/nope/jobs", []byte("x"), "Content-Type", "text/plain"), 404)
+	// The admin API prints too.
+	e.expect(e.do("POST", "/admin/v1/printers/p1/jobs", e.admin, []byte("^XA^XZ"), "Content-Type", "text/plain"), 202)
 
 	// Users.
 	var u api.PanelUser

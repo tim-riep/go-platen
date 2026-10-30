@@ -63,6 +63,7 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	handle("DELETE /admin/v1/panel-users/{ip}", s.deletePanelUser)
 	handle("POST /admin/v1/panel-users/{ip}/reset-peer", s.resetPanelUserPeer)
 
+	handle("POST /admin/v1/printers/{id}/jobs", s.adminSubmitJob)
 	handle("GET /admin/v1/jobs", s.adminListJobs)
 	handle("GET /admin/v1/jobs/{id}", s.adminGetJob)
 	handle("POST /admin/v1/jobs/{id}/cancel", s.adminCancelJob)
