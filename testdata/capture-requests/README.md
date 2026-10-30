@@ -26,7 +26,9 @@ The script asks which installed printer's Brother driver to use and creates
 a printer "platen capture" with that driver on a port that writes to a file,
 so nothing goes to a real printer. A new printer starts with the driver's own
 defaults (HQ 1200), so the script first opens the printing preferences and
-asks you to set the baseline: 600 dpi, toner save off, plain paper. For each
+asks you to set the baseline: 600 dpi, toner save off, plain paper. Each
+dialog is confirmed by typing `ok` in the console; pressing Enter opens it
+again, e.g. when it closed or went behind other windows. For each
 case it prints the PDF and stores `capture.prn`, `source.pdf` and
 `settings.txt` in `testdata/captures/<folder>/`. For resolution, toner save,
 paper source and media type it opens the printing preferences and asks you

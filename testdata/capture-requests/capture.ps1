@@ -138,8 +138,15 @@ function Open-Preferences([string]$message, [string[]]$settings) {
     Write-Host $message
     foreach ($line in $settings) { Write-Host "    $line" -ForegroundColor Yellow }
     Write-Host 'Leave everything else unchanged and click OK.'
-    Start-Process rundll32.exe -ArgumentList @('printui.dll,PrintUIEntry', '/e', '/n', "`"$captureName`"") -Wait
-    Read-Host 'Press Enter when the settings are saved' | Out-Null
+    # The dialog can close or end up behind other windows when the console
+    # does not have the focus, so Enter opens it again until the settings
+    # are confirmed.
+    while ($true) {
+        Start-Process rundll32.exe -ArgumentList @('printui.dll,PrintUIEntry', '/e', '/n', "`"$captureName`"") -Wait
+        $answer = Read-Host 'Type ok when the settings are saved, or press Enter to open the dialog again'
+        if ($answer -match '^\s*(ok|y|yes|j|ja)\s*$') { return }
+        foreach ($line in $settings) { Write-Host "    $line" -ForegroundColor Yellow }
+    }
 }
 
 function Read-PjlSettings([string]$path) {
