@@ -1,0 +1,4 @@
+platen includes third-party software. This file lists every dependency that
+is compiled into the platen binary, with its license and copyright notice.
+
+(No third-party dependencies yet.)

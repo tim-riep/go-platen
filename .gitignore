@@ -1,0 +1,6 @@
+/platen
+/dist/
+*.db
+*.db-wal
+*.db-shm
+/tmp/
