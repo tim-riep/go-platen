@@ -95,24 +95,57 @@ to override it.
 
 Signing uses the identities `Developer ID Application` (app, with the
 hardened runtime and a secure timestamp) and `Developer ID Installer`
-(package) from the login keychain; `PLATEN_SIGN_APP` and `PLATEN_SIGN_PKG`
-select others. Notarization uses a notarytool keychain profile, by default
-`platen-notary` (`PLATEN_NOTARY_PROFILE`). Create it once with an
-app-specific password of the Apple ID:
+(package) from the keychain; `PLATEN_SIGN_APP` and `PLATEN_SIGN_PKG` select
+others (name or SHA-1). Notarization uses an App Store Connect API key if
+`NOTARY_KEY_PATH`, `NOTARY_KEY_ID` and `NOTARY_ISSUER_ID` are set, otherwise
+the notarytool keychain profile `platen-notary` (`PLATEN_NOTARY_PROFILE`).
+Create the profile once, either with an app-specific password of the Apple
+ID:
 
 ```bash
 xcrun notarytool store-credentials platen-notary --apple-id <apple-id> --team-id <team-id>
 ```
 
-notarytool asks for the password and stores it in the keychain. `build.sh`
-then submits the package, waits for the result, staples the ticket and checks
-it with `spctl`.
+or with an API key:
+
+```bash
+xcrun notarytool store-credentials platen-notary --key AuthKey_<key-id>.p8 --key-id <key-id> --issuer <issuer-id>
+```
+
+`build.sh` then submits the package, waits for the result (and prints the
+notary log if it is rejected), staples the ticket and checks it with
+`spctl`.
 
 The bundle identifier is `io.github.tim-riep.platen`; set
 `PLATEN_BUNDLE_ID` to use another one.
 
-CI builds and checks the app on every push and keeps the unsigned package as
-an artifact; signed releases are built on a Mac with the certificates.
+### CI
+
+CI builds and checks the app on every push and keeps the unsigned package
+as an artifact. For version tags (`v*`) it signs and notarizes it, like
+the pdx project, with these repository secrets:
+
+| Secret | Content |
+| --- | --- |
+| `MACOS_CERT_P12` | Both Developer ID certificates (Application and Installer) with their private keys, exported from Keychain Access as one .p12, base64 encoded |
+| `MACOS_CERT_PASSWORD` | The password of the .p12 |
+| `NOTARY_KEY_P8` | The content of the App Store Connect API key file `AuthKey_<key-id>.p8` |
+| `NOTARY_KEY_ID` | The key's ID |
+| `NOTARY_ISSUER_ID` | The Issuer ID (a UUID, above the key table in App Store Connect) |
+
+```bash
+base64 -i certificates.p12 | gh secret set MACOS_CERT_P12 --repo tim-riep/go-platen
+gh secret set MACOS_CERT_PASSWORD --repo tim-riep/go-platen
+gh secret set NOTARY_KEY_P8 --repo tim-riep/go-platen < AuthKey_<key-id>.p8
+gh secret set NOTARY_KEY_ID --repo tim-riep/go-platen
+gh secret set NOTARY_ISSUER_ID --repo tim-riep/go-platen
+```
+
+`desktop/macos/ci-keychain.sh` imports the certificates into a temporary
+keychain, masks the certificate names and fingerprints in the logs and
+passes the identities to `build.sh`; the keychain is deleted at the end.
+The workflow **Signing check** (`gh workflow run signing-check.yml`) tests
+the macOS and Windows secrets without publishing anything.
 
 ## Uninstall
 

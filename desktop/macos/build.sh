@@ -11,6 +11,9 @@
 #   PLATEN_BUNDLE_ID       bundle identifier, default io.github.tim-riep.platen
 #   PLATEN_SIGN_APP        codesign identity, default "Developer ID Application"
 #   PLATEN_SIGN_PKG        productbuild identity, default "Developer ID Installer"
+#   Notarization, one of:
+#   NOTARY_KEY_PATH, NOTARY_KEY_ID, NOTARY_ISSUER_ID
+#                          App Store Connect API key (.p8), used in CI
 #   PLATEN_NOTARY_PROFILE  notarytool keychain profile, default platen-notary
 set -eu
 
@@ -80,8 +83,24 @@ else
 fi
 
 if [ $NOTARIZE = 1 ]; then
-	echo "==> Notarizing (profile $NOTARY_PROFILE)"
-	xcrun notarytool submit "$PKG" --keychain-profile "$NOTARY_PROFILE" --wait
+	if [ -n "${NOTARY_KEY_PATH:-}" ] && [ -n "${NOTARY_KEY_ID:-}" ] && [ -n "${NOTARY_ISSUER_ID:-}" ]; then
+		echo "==> Notarizing (API key)"
+		set -- --key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID"
+	else
+		echo "==> Notarizing (profile $NOTARY_PROFILE)"
+		set -- --keychain-profile "$NOTARY_PROFILE"
+	fi
+	result=$(xcrun notarytool submit "$PKG" --wait --output-format json "$@") || true
+	echo "$result"
+	case "$result" in
+	*'"status":"Accepted"'*) ;;
+	*)
+		id=$(printf '%s' "$result" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+		[ -z "$id" ] || xcrun notarytool log "$id" "$@" >&2
+		echo "notarization of $PKG failed" >&2
+		exit 1
+		;;
+	esac
 	xcrun stapler staple "$PKG"
 	spctl --assess --type install --verbose=2 "$PKG"
 fi

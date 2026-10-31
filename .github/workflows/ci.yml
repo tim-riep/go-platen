@@ -148,8 +148,10 @@ jobs:
           name: platen-windows
           path: desktop/windows/build/*-setup.exe
 
-  # Builds the macOS app and an unsigned installer. Signed and notarized
-  # packages are built locally, see docs/macos.md.
+  # Builds the macOS app and its installer: unsigned on every push; signed
+  # with Developer ID and notarized for version tags (v*), with the secrets
+  # MACOS_CERT_P12, MACOS_CERT_PASSWORD, NOTARY_KEY_P8, NOTARY_KEY_ID and
+  # NOTARY_ISSUER_ID (see docs/macos.md).
   macos:
     runs-on: macos-15
     defaults:
@@ -161,11 +163,29 @@ jobs:
           fetch-depth: 0
       - name: checks
         run: swift run PlatenChecks
+      - name: set up signing
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+        run: ./ci-keychain.sh
       - name: build
-        run: ./build.sh --no-sign
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          if [ "${GITHUB_REF#refs/tags/v}" != "$GITHUB_REF" ]; then
+            ./build.sh
+          else
+            ./build.sh --no-sign
+          fi
+      - name: remove keychain
+        if: always()
+        run: if [ -n "${MACOS_KEYCHAIN:-}" ]; then security delete-keychain "$MACOS_KEYCHAIN"; fi
       - uses: actions/upload-artifact@v4
         with:
-          name: platen-macos-unsigned
+          name: platen-macos
           path: desktop/macos/build/*.pkg
 
   # Builds the container image for amd64 and arm64 on every run. It is pushed

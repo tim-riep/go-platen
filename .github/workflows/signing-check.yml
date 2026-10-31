@@ -1,0 +1,66 @@
+# Manual check of the signing secrets without publishing anything.
+# macOS: load the certificates, find both identities and sign in to the
+# notary service with the API key. Windows: sign Platen.exe with the Certum
+# certificate (CERTUM_EMAIL, CERTUM_OTP).
+#   gh workflow run signing-check.yml
+name: Signing check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: load certificates
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+        run: desktop/macos/ci-keychain.sh
+      - name: identities
+        run: |
+          # Only the certificate types, no names or team IDs.
+          security find-identity -v "$MACOS_KEYCHAIN" | sed -n 's/.*"\(Developer ID [A-Za-z]*\): .*/\1 found/p'
+          security find-identity -v "$MACOS_KEYCHAIN" | tail -1
+      - name: sign in to the notary service
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          if ! printf '%s' "$NOTARY_ISSUER_ID" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; then
+            echo "::error::NOTARY_ISSUER_ID is not a UUID (the Issuer ID above the key table in App Store Connect)"
+            exit 1
+          fi
+          xcrun notarytool history --key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" | head -5
+          echo "signed in to the notary service"
+      - name: remove keychain
+        if: always()
+        run: if [ -n "${MACOS_KEYCHAIN:-}" ]; then security delete-keychain "$MACOS_KEYCHAIN"; fi
+
+  windows:
+    runs-on: ubuntu-latest
+    env:
+      CERTUM_EMAIL: ${{ secrets.CERTUM_EMAIL }}
+      CERTUM_OTP: ${{ secrets.CERTUM_OTP }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: tools
+        run: sudo apt-get update && sudo apt-get install -y osslsigncode
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/ssign
+          key: ssign-0.1.8-${{ runner.os }}-${{ runner.arch }}
+      - name: ssign
+        run: '[ -x ~/.cargo/bin/ssign ] || cargo install ssign --version 0.1.8 --locked'
+      - name: sign an executable
+        run: |
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o Platen.exe ./cmd/platen-desktop
+          desktop/windows/sign.sh Platen.exe

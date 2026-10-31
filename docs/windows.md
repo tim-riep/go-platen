@@ -132,6 +132,9 @@ gh secret set CERTUM_EMAIL --repo tim-riep/go-platen
 gh secret set CERTUM_OTP --repo tim-riep/go-platen
 ```
 
+The workflow **Signing check** (`gh workflow run signing-check.yml`) tests
+them without publishing anything.
+
 ### Tests
 
 `go test ./internal/desktop` covers the receiving of documents, the spool, the printer
