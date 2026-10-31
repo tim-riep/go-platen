@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Platen</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>Platen</h1>
+
+  <section>
+    <h2>Print server</h2>
+    <form id="connect">
+      <input id="address" name="address" placeholder="printserver.netbird.cloud" autocomplete="off" spellcheck="false" required>
+      <button id="connect-btn" type="submit">Connect &amp; install printers</button>
+    </form>
+    <p class="hint">The NetBird name or IP of the platen server. This computer must be connected to NetBird.</p>
+    <dl id="me" hidden></dl>
+    <p id="error" class="error" hidden></p>
+    <p id="receiver-error" class="error" hidden></p>
+  </section>
+
+  <section id="printers-section" hidden>
+    <h2>Printers</h2>
+    <ul id="printers" class="list"></ul>
+    <p class="hint"><span id="last-sync"></span> The printers appear in every print dialog.
+      <button id="sync" type="button" class="link">Sync now</button></p>
+  </section>
+
+  <section id="jobs-section" hidden>
+    <h2>Jobs</h2>
+    <ul id="jobs" class="list"></ul>
+    <button id="retry" type="button">Retry now</button>
+  </section>
+
+  <section>
+    <h2>General</h2>
+    <label id="login-row" hidden><input id="login" type="checkbox"> Start Platen at sign-in</label>
+    <p><button id="disconnect" type="button" class="danger" hidden>Remove printers &amp; disconnect…</button></p>
+    <p class="hint" id="version"></p>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

@@ -3,10 +3,12 @@ module github.com/tim-riep/go-platen
 go 1.26.4
 
 require (
+	fyne.io/systray v1.12.2
 	github.com/BurntSushi/toml v1.6.0
 	github.com/klippa-app/go-pdfium v1.21.4
 	github.com/netbirdio/netbird v0.82.0
 	github.com/tetratelabs/wazero v1.12.0
+	golang.org/x/sys v0.49.0
 	modernc.org/sqlite v1.61.0
 )
 
@@ -126,7 +128,6 @@ require (
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect

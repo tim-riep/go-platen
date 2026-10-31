@@ -89,6 +89,12 @@ printer, so any app can print to it as PDF. The Mac only needs NetBird and
 the server's address; it may print if it has a panel role or belongs to a
 NetBird user. Installer, signing and notarization: [docs/macos.md](docs/macos.md).
 
+## Windows app
+
+The Windows client does the same with a notification area icon and a
+settings page in the browser: every platen printer becomes a Windows
+printer that sends PDF to the server. See [docs/windows.md](docs/windows.md).
+
 ## Container image
 
 `ghcr.io/tim-riep/go-platen` (amd64 and arm64, built `FROM scratch`, non-root,
