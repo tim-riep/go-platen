@@ -1,0 +1,25 @@
+[Unit]
+Description=Platen print client
+Documentation=https://github.com/tim-riep/go-platen/blob/main/docs/linux.md
+After=network-online.target cups.service
+Wants=network-online.target
+
+[Service]
+# A member of the CUPS system group lpadmin (set up by the package), so it
+# can add and remove printers without root.
+User=platen
+Group=platen
+ExecStart=/usr/bin/platen-desktop service
+StateDirectory=platen-desktop
+StateDirectoryMode=0700
+RuntimeDirectory=platen-desktop
+RuntimeDirectoryMode=0755
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

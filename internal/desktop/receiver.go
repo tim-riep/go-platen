@@ -111,7 +111,7 @@ func (r *tcpReceiver) serve(id string, l *listener) {
 			// spooler sends, it holds the printer, so a lookup before
 			// reading could wait for the reader, which waits for it.
 			titles := make(chan string, 1)
-			go func() { titles <- jobTitle(name) }()
+			go func() { titles <- jobTitle(id, name) }()
 			title := func() string {
 				select {
 				case t := <-titles:

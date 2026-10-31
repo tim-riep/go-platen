@@ -187,6 +187,11 @@ func uninstallService(ctx context.Context) error {
 			return err
 		}
 	}
+	return removePrinters(ctx)
+}
+
+// removePrinters removes all printers of the app.
+func removePrinters(ctx context.Context) error {
 	installed, err := desktop.InstalledPrinters(ctx)
 	if err != nil {
 		return err

@@ -1,7 +1,8 @@
-// Command platen-desktop is the Windows desktop client of platen. A
-// Windows service (LocalSystem) installs the server's printers as local
-// printers and forwards what is printed on them; the tray icon of each
-// user opens its settings page. See docs/windows.md.
+// Command platen-desktop is the Windows and Linux desktop client of
+// platen. A service (LocalSystem on Windows, systemd on Linux) installs the
+// server's printers as local printers and forwards what is printed on
+// them; the tray icon of each user opens its settings page. See
+// docs/windows.md and docs/linux.md.
 package main
 
 import (
@@ -22,13 +23,14 @@ var version = "dev"
 
 const usage = `usage: platen-desktop [command]
 
-  (none)                     tray icon and settings page (Windows), the app in
-                             the foreground elsewhere (development)
+  (none)                     tray icon and settings page (Windows, Linux), the
+                             app in the foreground elsewhere (development)
   tray                       tray icon only, as started at sign-in
-  service                    run as the Windows service (started by Windows)
-  install-service            install or update and start the service (admin)
-  uninstall-service          stop and remove the service and its printers (admin)
-  set-server <addr> [-lock]  set the print server of the service (admin)
+  service                    run as the service (started by Windows or systemd)
+  install-service            install or update and start the service (Windows, admin)
+  uninstall-service          stop and remove the service and its printers (Windows, admin)
+  set-server <addr> [-lock]  set the print server of the service (admin, root)
+  remove-printers            remove the printers of the app (admin, root)
   version                    print the version`
 
 func main() {
@@ -54,6 +56,8 @@ func run(args []string) error {
 		return installService()
 	case "uninstall-service":
 		return uninstallService(ctx)
+	case "remove-printers":
+		return removePrinters(ctx)
 	case "set-server":
 		if len(args) < 2 || len(args) > 3 || (len(args) == 3 && strings.TrimLeft(args[2], "-") != "lock") {
 			return fmt.Errorf("%s", usage)

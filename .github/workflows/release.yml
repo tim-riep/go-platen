@@ -1,5 +1,6 @@
 # Release on a v* tag: check, build the platen binaries for Linux, the
-# signed and notarized macOS installer and the signed Windows installer,
+# signed and notarized macOS installer, the signed Windows installer, the
+# Linux desktop packages (.deb, unsigned),
 # publish the container image to ghcr.io and create a GitHub release with
 # all files and checksums. The release notes come from the message of the
 # annotated tag. Only this workflow signs; CI (ci.yml) never does.
@@ -118,6 +119,25 @@ jobs:
           name: release-windows
           path: desktop/windows/build/*-setup.exe
 
+  linux-desktop:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: packages
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: VERSION=${VERSION#v} desktop/linux/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-desktop
+          path: desktop/linux/build/*.deb
+
   image:
     needs: check
     runs-on: ubuntu-latest
@@ -152,7 +172,7 @@ jobs:
           build-args: VERSION=${{ github.ref_name }}
 
   release:
-    needs: [binaries, macos, windows, image]
+    needs: [binaries, macos, windows, linux-desktop, image]
     runs-on: ubuntu-latest
     permissions:
       contents: write

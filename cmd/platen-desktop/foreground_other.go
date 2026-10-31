@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !linux
 
 package main
 
@@ -14,10 +14,10 @@ import (
 	"github.com/tim-riep/go-platen/internal/desktop"
 )
 
-// Outside Windows the app runs in the foreground for development; it
-// cannot manage printers there.
+// Outside Windows and Linux the app runs in the foreground for
+// development; it cannot manage printers there.
 
-var errWindowsOnly = errors.New("only available on Windows")
+var errWindowsOnly = errors.New("only available on Windows and Linux")
 
 func runDefault(ctx context.Context, stop context.CancelFunc, openPage bool) error {
 	d, err := os.UserConfigDir()
@@ -50,3 +50,4 @@ func runService() error                          { return errWindowsOnly }
 func installService() error                      { return errWindowsOnly }
 func uninstallService(ctx context.Context) error { return errWindowsOnly }
 func setServer(cfg desktop.Config) error         { return errWindowsOnly }
+func removePrinters(ctx context.Context) error   { return errWindowsOnly }

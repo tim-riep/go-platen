@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Platen
+Comment=Status of the platen printers
+Exec=platen-desktop tray
+Icon=platen
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

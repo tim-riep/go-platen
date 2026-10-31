@@ -34,7 +34,7 @@ type jobInfo1 struct {
 const jobStatusPrinting = 0x10
 
 // jobTitle returns the document name of the job the printer is printing.
-func jobTitle(printer string) string {
+func jobTitle(_, printer string) string {
 	name, err := windows.UTF16PtrFromString(printer)
 	if err != nil {
 		return ""

@@ -111,6 +111,32 @@ jobs:
           PLATEN_WINDOWS_E2E: "1"
         run: go test -v -count=1 ./internal/desktop
 
+  # The Linux client: builds the .deb packages and runs the end-to-end
+  # tests with a real CUPS. One adds queues and prints in-process; the
+  # other installs the .deb with systemd, presets a locked server, prints
+  # through the service and purges the package.
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: CUPS
+        run: sudo apt-get update && sudo apt-get install -y cups cups-filters
+      - name: packages
+        run: desktop/linux/build.sh
+      - name: test
+        run: |
+          deb=$(ls "$PWD"/desktop/linux/build/platen-desktop_*_amd64.deb)
+          sudo env "PATH=$PATH" PLATEN_LINUX_E2E=1 PLATEN_LINUX_DEB="$deb" go test -v -count=1 -run 'TestLinux' ./internal/desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: platen-linux-deb
+          path: desktop/linux/build/*.deb
+
   # Builds the unsigned Windows installer.
   windows-installer:
     runs-on: ubuntu-latest

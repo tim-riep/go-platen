@@ -1,7 +1,9 @@
 // Command mkicon draws the platen icon (the same design as the macOS app
-// icon) and writes it as a Windows .ico with PNG images:
+// icon) and writes it as a Windows .ico with PNG images, or as a 256 pixel
+// PNG for Linux if the name ends in .png:
 //
 //	go run ./desktop/windows/mkicon cmd/platen-desktop/platen.ico
+//	go run ./desktop/windows/mkicon cmd/platen-desktop/platen.png
 package main
 
 import (
@@ -12,6 +14,7 @@ import (
 	"image/png"
 	"log"
 	"os"
+	"strings"
 )
 
 // Shapes in a 1024 unit square, origin top left.
@@ -99,7 +102,13 @@ func draw(size int) []byte {
 
 func main() {
 	if len(os.Args) != 2 {
-		log.Fatal("usage: mkicon <out.ico>")
+		log.Fatal("usage: mkicon <out.ico|out.png>")
+	}
+	if strings.HasSuffix(os.Args[1], ".png") {
+		if err := os.WriteFile(os.Args[1], draw(256), 0o644); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
 	sizes := []int{16, 20, 24, 32, 40, 48, 64, 256}
 	var images [][]byte

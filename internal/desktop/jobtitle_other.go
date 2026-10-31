@@ -1,6 +1,6 @@
-//go:build !windows
+//go:build !windows && !linux
 
 package desktop
 
 // jobTitle has no print queue to ask outside Windows.
-func jobTitle(printer string) string { return "" }
+func jobTitle(printerID, printer string) string { return "" }

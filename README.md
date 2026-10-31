@@ -97,6 +97,13 @@ the browser: every platen printer becomes a Windows printer that sends PDF
 to the server. The installer can preset and lock the server for managed
 rollouts. See [docs/windows.md](docs/windows.md).
 
+## Linux app
+
+The `platen-desktop` package for Debian and Ubuntu (amd64, arm64) works like
+the Windows client: a systemd service turns every platen printer into a
+CUPS printer that sends PDF to the server, and each user gets a tray icon
+and the settings page. See [docs/linux.md](docs/linux.md).
+
 ## Container image
 
 `ghcr.io/tim-riep/go-platen` (amd64 and arm64, built `FROM scratch`, non-root,
@@ -147,9 +154,9 @@ Integration tests run server and worker without NetBird through a loopback
 
 Pushing an annotated tag `v<version>` runs the release workflow
 (`.github/workflows/release.yml`): it builds the Linux binaries, the signed
-and notarized macOS installer, the signed Windows installer and the
-container image and creates a GitHub release with these files and
-`SHA256SUMS`. The tag message becomes the release notes. Regular CI never
+and notarized macOS installer, the signed Windows installer, the Linux
+desktop packages (.deb) and the container image and creates a GitHub
+release with these files and `SHA256SUMS`. The tag message becomes the release notes. Regular CI never
 signs anything.
 
 ```bash

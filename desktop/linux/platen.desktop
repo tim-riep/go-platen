@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Platen
+Comment=Settings of the platen printers
+Exec=platen-desktop
+Icon=platen
+Terminal=false
+Categories=Utility;
