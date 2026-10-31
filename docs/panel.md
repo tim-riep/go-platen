@@ -6,6 +6,12 @@ admin API offers (workers and enrollment tokens, printers and their options,
 app clients and their tokens, jobs, printing a file) plus the management of
 panel users.
 
+**Jobs**: admins can cancel queued jobs, **retry** failed or canceled jobs
+(they go back into the queue with the same document and fresh attempts; a
+job that failed as *uncertain* may already have been printed) and **delete**
+jobs with their documents, except while a worker processes them. The CLI
+offers the same with `platen admin job cancel|retry|delete <id>`.
+
 **Printing a file**: admins can print a file on any printer with *Print…* in
 the printer list or *Print a file* under Jobs. The file is sent as it is, as
 the ERP does: PDF for `pdf-to-raster` and `brother-raster` printers, the

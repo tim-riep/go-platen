@@ -379,8 +379,22 @@ async function viewJobs() {
         j.error ? el("div", { class: "muted" }, j.error) : null),
       el("td", {}, j.content_type, el("div", { class: "muted" }, fmtSize(j.size) + (j.copies > 1 ? ", " + j.copies + " copies" : ""))),
       el("td", {}, fmtTime(j.created_at)),
-      el("td", { class: "actions" }, j.status === "queued" ? adminButton("Cancel", () => confirmAction("Cancel job", "Cancel job " + j.id + "?", "Cancel job",
-        () => api("POST", "/jobs/" + encodeURIComponent(j.id) + "/cancel")), "link") : null))), "No jobs."));
+      el("td", { class: "actions" }, jobActions(j)))), "No jobs."));
+}
+
+function jobActions(j) {
+  const path = "/jobs/" + encodeURIComponent(j.id);
+  const busy = j.status === "leased" || j.status === "printing";
+  return [
+    j.status === "queued" ? adminButton("Cancel", () => confirmAction("Cancel job", "Cancel job " + j.id + "?", "Cancel job",
+      () => api("POST", path + "/cancel")), "link") : null,
+    j.status === "failed" || j.status === "canceled" ? adminButton("Retry", () => confirmAction("Retry job",
+      "Put job " + j.id + " back into the queue of " + j.printer_id + " with the same document?" +
+      (j.error && j.error.startsWith("uncertain") ? " The job may already have been printed." : ""), "Retry",
+      () => api("POST", path + "/retry")), "link") : null,
+    busy ? null : adminButton("Delete", () => confirmAction("Delete job", "Delete job " + j.id + " and its document?", "Delete",
+      () => api("DELETE", path)), "link"),
+  ];
 }
 
 async function viewClients() {

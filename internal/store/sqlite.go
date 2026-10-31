@@ -972,3 +972,37 @@ func (s *SQLite) DeletePanelUser(ctx context.Context, ip string) error {
 func (s *SQLite) TouchPanelUser(ctx context.Context, ip string, at time.Time) error {
 	return affected(s.db.ExecContext(ctx, `UPDATE panel_users SET last_seen = ? WHERE ip = ?`, ms(at), ip))
 }
+
+func (s *SQLite) RetryJob(ctx context.Context, id string, now time.Time) (*Job, error) {
+	var out *Job
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		j, err := getJob(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if j.Status != JobFailed && j.Status != JobCanceled {
+			return fmt.Errorf("%w: only failed or canceled jobs can be retried, the job is %s", ErrConflict, j.Status)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE jobs SET status = 'queued', attempts = 0, error = '', lease_expires_at = NULL,
+			leased_at = NULL, started_at = NULL, finished_at = NULL, updated_at = ? WHERE id = ?`, ms(now), id); err != nil {
+			return err
+		}
+		out, err = getJob(ctx, tx, id)
+		return err
+	})
+	return out, err
+}
+
+func (s *SQLite) DeleteJob(ctx context.Context, id string) error {
+	return s.tx(ctx, func(tx *sql.Tx) error {
+		j, err := getJob(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if j.Status == JobLeased || j.Status == JobPrinting {
+			return fmt.Errorf("%w: the job is %s", ErrConflict, j.Status)
+		}
+		_, err = tx.ExecContext(ctx, `DELETE FROM jobs WHERE id = ?`, id)
+		return err
+	})
+}

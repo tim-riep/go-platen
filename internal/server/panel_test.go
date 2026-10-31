@@ -149,6 +149,20 @@ func TestPanelAdminActions(t *testing.T) {
 		t.Fatalf("submitter %q", aj.AppClientID)
 	}
 	e.expect(e.panel("POST", "/printers/nope/jobs", []byte("x"), "Content-Type", "text/plain"), 404)
+	// Retry and delete.
+	e.expect(e.panel("POST", "/jobs/"+job.ID+"/retry", nil), 409)
+	e.expect(e.panel("POST", "/jobs/"+job.ID+"/cancel", nil), 200)
+	var retried api.AdminJob
+	e.expect(e.panel("POST", "/jobs/"+job.ID+"/retry", nil), 200).decode(t, &retried)
+	if retried.Status != "queued" {
+		t.Fatalf("retried %+v", retried)
+	}
+	e.expect(e.panel("DELETE", "/jobs/"+job.ID, nil), 204)
+	e.expect(e.panel("GET", "/jobs/"+job.ID, nil), 404)
+	// The document is gone with the job.
+	if entries, _ := e.srv.spool.List(); len(entries) != 0 {
+		t.Fatalf("spool after delete: %+v", entries)
+	}
 	// The admin API prints too.
 	e.expect(e.do("POST", "/admin/v1/printers/p1/jobs", e.admin, []byte("^XA^XZ"), "Content-Type", "text/plain"), 202)
 

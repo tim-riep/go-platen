@@ -295,6 +295,12 @@ type Store interface {
 	ListJobs(ctx context.Context, f JobFilter) ([]Job, error)
 	// CancelJob cancels a queued job; other states yield ErrConflict.
 	CancelJob(ctx context.Context, id string, now time.Time) (*Job, error)
+	// RetryJob puts a failed or canceled job back into its queue with its
+	// attempts reset; other states yield ErrConflict.
+	RetryJob(ctx context.Context, id string, now time.Time) (*Job, error)
+	// DeleteJob deletes a job that no worker is processing; a leased or
+	// printing job yields ErrConflict.
+	DeleteJob(ctx context.Context, id string) error
 
 	// LeaseJob assigns the oldest eligible queued job to the worker in a
 	// single transaction. A printer only receives a job while it has no

@@ -684,6 +684,29 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AdminJob" }
+    delete:
+      tags: [admin]
+      summary: Delete a job and its document (not while a worker processes it)
+      security: [{ adminToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "204": { description: Deleted }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/v1/jobs/{id}/retry:
+    post:
+      tags: [admin]
+      summary: Put a failed or canceled job back into its queue
+      description: The job keeps its document; its attempts start again at 0.
+      security: [{ adminToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ID" }]
+      responses:
+        "200":
+          description: Queued again
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminJob" }
+        "409": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
   /admin/v1/jobs/{id}/cancel:
     post:
       tags: [admin]

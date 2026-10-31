@@ -1,7 +1,9 @@
 package server
 
 import (
+	"errors"
 	"net/http"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -67,6 +69,8 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	handle("GET /admin/v1/jobs", s.adminListJobs)
 	handle("GET /admin/v1/jobs/{id}", s.adminGetJob)
 	handle("POST /admin/v1/jobs/{id}/cancel", s.adminCancelJob)
+	handle("POST /admin/v1/jobs/{id}/retry", s.adminRetryJob)
+	handle("DELETE /admin/v1/jobs/{id}", s.adminDeleteJob)
 }
 
 // ---- workers ----
@@ -510,4 +514,41 @@ func (s *Server) adminCancelJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, apiAdminJob(j))
+}
+
+// adminRetryJob puts a failed or canceled job back into its queue.
+func (s *Server) adminRetryJob(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	f, err := s.spool.Open(id)
+	if errors.Is(err, os.ErrNotExist) {
+		writeError(w, api.Errorf(http.StatusGone, api.CodeNotFound, "the document of job %s is no longer available", id))
+		return
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	f.Close()
+	j, err := s.store.RetryJob(r.Context(), id, s.opts.Now())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.log.Info("job retried", "job", j.ID, "printer", j.QueueID, "by", panelActor(r))
+	s.notify.broadcast()
+	writeJSON(w, http.StatusOK, apiAdminJob(j))
+}
+
+// adminDeleteJob deletes a job and its document.
+func (s *Server) adminDeleteJob(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.store.DeleteJob(r.Context(), id); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.spool.Remove(id); err != nil {
+		s.log.Error("delete document", "job", id, "err", err)
+	}
+	s.log.Info("job deleted", "job", id, "by", panelActor(r))
+	w.WriteHeader(http.StatusNoContent)
 }

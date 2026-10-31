@@ -112,6 +112,8 @@ Jobs:
   job list [-status S] [-printer P] [-client C] [-worker W] [-limit N]
   job get <id>
   job cancel <id>
+  job retry <id>                          queue a failed or canceled job again
+  job delete <id>                         delete a job and its document
   job print <printer> <file> [-copies N] [-title T] [-type CONTENT-TYPE]
                                           print a file; the type defaults by extension
                                           (.pdf: application/pdf, else application/octet-stream)
@@ -395,7 +397,7 @@ func jobCmd(ctx context.Context, c *Client, action string, args []string) (any, 
 		}
 		var l api.List[api.AdminJob]
 		return l, c.do(ctx, http.MethodGet, p, nil, &l)
-	case "get", "cancel":
+	case "get", "cancel", "retry", "delete":
 	case "print":
 		return printFile(ctx, c, args)
 	default:
@@ -406,10 +408,14 @@ func jobCmd(ctx context.Context, c *Client, action string, args []string) (any, 
 		return nil, err
 	}
 	var j api.AdminJob
-	if action == "get" {
+	switch action {
+	case "get":
 		return j, c.do(ctx, http.MethodGet, path("admin", "v1", "jobs", id), nil, &j)
+	case "delete":
+		return nil, c.do(ctx, http.MethodDelete, path("admin", "v1", "jobs", id), nil, nil)
+	default:
+		return j, c.do(ctx, http.MethodPost, path("admin", "v1", "jobs", id, action), nil, &j)
 	}
-	return j, c.do(ctx, http.MethodPost, path("admin", "v1", "jobs", id, "cancel"), nil, &j)
 }
 
 func panelUserCmd(ctx context.Context, c *Client, action string, args []string) (any, error) {

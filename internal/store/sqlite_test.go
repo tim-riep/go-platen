@@ -497,3 +497,44 @@ func TestPanelUsers(t *testing.T) {
 		t.Fatalf("list: %+v %v", list, err)
 	}
 }
+
+func TestRetryAndDeleteJob(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	seed(t, s, "w1", "p1")
+	j := newJob("a", "p1")
+	j.MaxAttempts = 1
+	mustCreate(t, s, j)
+	if _, err := s.RetryJob(ctx, "a", t0); !errors.Is(err, ErrConflict) {
+		t.Fatalf("retry queued job: %v", err)
+	}
+	if _, err := s.LeaseJob(ctx, LeaseRequest{WorkerID: "w1", Now: t0, Duration: time.Minute}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteJob(ctx, "a"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("delete leased job: %v", err)
+	}
+	if _, err := s.FailJob(ctx, FailRequest{JobID: "a", WorkerID: "w1", Error: "paper jam", Now: t0}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.RetryJob(ctx, "a", t0.Add(time.Minute))
+	if err != nil || got.Status != JobQueued || got.Attempts != 0 || got.Error != "" || got.FinishedAt != nil {
+		t.Fatalf("retry: %+v %v", got, err)
+	}
+	// The retried job can be leased again.
+	if l, err := s.LeaseJob(ctx, LeaseRequest{WorkerID: "w1", Now: t0, Duration: time.Minute}); err != nil || l == nil || l.ID != "a" || l.Attempts != 1 {
+		t.Fatalf("lease after retry: %+v %v", l, err)
+	}
+	if _, err := s.CompleteJob(ctx, "a", "w1", t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RetryJob(ctx, "a", t0); !errors.Is(err, ErrConflict) {
+		t.Fatalf("retry done job: %v", err)
+	}
+	if err := s.DeleteJob(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteJob(ctx, "a"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("delete twice: %v", err)
+	}
+}

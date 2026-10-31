@@ -146,6 +146,14 @@ func TestCommands(t *testing.T) {
 		t.Fatalf("submitter %q", aj.AppClientID)
 	}
 	run(t, c, "job cancel "+job.ID, nil)
+	run(t, c, "job retry "+job.ID, &aj)
+	if aj.Status != "queued" || aj.Attempts != 0 {
+		t.Fatalf("retried job: %+v", aj)
+	}
+	run(t, c, "job delete "+job.ID, nil)
+	if err := Run(context.Background(), c, []string{"job", "get", job.ID}, io.Discard); !api.IsStatus(err, http.StatusNotFound) {
+		t.Fatalf("deleted job still there: %v", err)
+	}
 	if err := Run(context.Background(), c, []string{"job", "print", "zebra"}, io.Discard); !errors.Is(err, ErrUsage) {
 		t.Fatalf("missing file: %v", err)
 	}

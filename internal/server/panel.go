@@ -211,6 +211,8 @@ func (s *Server) panelRoutes(mux *http.ServeMux) {
 	view("GET /panel/v1/jobs", s.adminListJobs)
 	view("GET /panel/v1/jobs/{id}", s.adminGetJob)
 	edit("POST /panel/v1/jobs/{id}/cancel", s.adminCancelJob)
+	edit("POST /panel/v1/jobs/{id}/retry", s.adminRetryJob)
+	edit("DELETE /panel/v1/jobs/{id}", s.adminDeleteJob)
 
 	// Panel users. Viewers do not see the user list.
 	edit("GET /panel/v1/users", s.listPanelUsers)
