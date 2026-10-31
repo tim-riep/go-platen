@@ -36,6 +36,9 @@ func newReceiver(ctx context.Context, a *App) receiver {
 	return r
 }
 
+// pipeBuffer is the input buffer of a pipe.
+const pipeBuffer = 64 << 10
+
 // pipeSecurity lets the spooler (SYSTEM), administrators and the signed-in
 // users (the spooler may open the port as the printing user) write, and
 // refuses access over the network.
@@ -65,7 +68,7 @@ func (r *pipeReceiver) update(printers []LocalPrinter) string {
 			p.name = lp.Name
 			continue
 		}
-		ln, err := winio.ListenPipe(PortPrefix+id, &winio.PipeConfig{SecurityDescriptor: pipeSecurity, InputBufferSize: 64 << 10})
+		ln, err := winio.ListenPipe(PortPrefix+id, &winio.PipeConfig{SecurityDescriptor: pipeSecurity, InputBufferSize: pipeBuffer})
 		if err == nil {
 			p := &pipe{ln: ln, name: lp.Name}
 			r.pipes[id] = p
@@ -93,11 +96,22 @@ func (r *pipeReceiver) serve(id string, p *pipe) {
 		r.mu.Unlock()
 		go func() {
 			defer conn.Close()
-			// The job is being printed while the spooler writes, so it is
-			// in the printer's queue now.
-			title := jobTitle(name)
+			// Read at once and ask for the title alongside: while the
+			// spooler writes into the pipe it holds the printer, so a
+			// lookup before reading would wait for the reader, which
+			// waits for the lookup.
+			titles := make(chan string, 1)
+			go func() { titles <- jobTitle(name) }()
+			title := func() string {
+				select {
+				case t := <-titles:
+					return t
+				case <-time.After(5 * time.Second):
+					return ""
+				}
+			}
 			if err := r.app.Receive(id, title, conn); err != nil {
-				r.app.Log.Error("receiver: job lost", "printer", id, "title", title, "err", err)
+				r.app.Log.Error("receiver: job lost", "printer", id, "err", err)
 			}
 		}()
 	}

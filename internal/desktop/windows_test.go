@@ -17,6 +17,10 @@ import (
 	"github.com/tim-riep/go-platen/internal/store"
 )
 
+// largeDocument is about 50 pages of text, so that the PDF is larger than
+// the pipe buffer and the spooler has to wait for the receiver.
+const largeDocument = `(1..3000 | ForEach-Object { "platen test line $_ " + ('x' * 60) })`
+
 // TestWindowsPrinting installs real printers, prints on one and checks
 // that the job reaches the server as PDF. It changes the computer's
 // printers and needs administrator rights, so it runs only
@@ -61,7 +65,7 @@ func TestWindowsPrinting(t *testing.T) {
 	}
 
 	// Print a text through the printer as any application would.
-	if _, err := runPowerShell(ctx, psPrologue+"'platen test page' | Out-Printer -Name "+psQuote(lab)); err != nil {
+	if _, err := runPowerShell(ctx, psPrologue+largeDocument+" | Out-Printer -Name "+psQuote(lab)); err != nil {
 		t.Fatal("print:", err)
 	}
 	var jobs []store.Job
@@ -80,6 +84,9 @@ func TestWindowsPrinting(t *testing.T) {
 		t.Errorf("no job title: %+v", jobs[0])
 	}
 	t.Logf("job %q, %d bytes", jobs[0].Title, jobs[0].Size)
+	if jobs[0].Size <= pipeBuffer {
+		t.Errorf("the document (%d bytes) fits into the pipe buffer, so the test does not cover a spooler that waits for the reader", jobs[0].Size)
+	}
 
 	if err := app.Disconnect(ctx); err != nil {
 		t.Fatal(err)
@@ -155,7 +162,7 @@ func TestWindowsService(t *testing.T) {
 		t.Fatalf("service state %+v", state)
 	}
 
-	if _, err := runPowerShell(ctx, psPrologue+"'platen service test page' | Out-Printer -Name "+psQuote(lab)); err != nil {
+	if _, err := runPowerShell(ctx, psPrologue+largeDocument+" | Out-Printer -Name "+psQuote(lab)); err != nil {
 		t.Fatal("print:", err)
 	}
 	var jobs []store.Job
@@ -170,6 +177,9 @@ func TestWindowsService(t *testing.T) {
 		t.Fatalf("jobs %+v", jobs)
 	}
 	t.Logf("job %q, %d bytes", jobs[0].Title, jobs[0].Size)
+	if jobs[0].Size <= pipeBuffer {
+		t.Errorf("the document (%d bytes) fits into the pipe buffer, so the test does not cover a spooler that waits for the reader", jobs[0].Size)
+	}
 
 	platen("uninstall-service")
 	installed, _ := InstalledPrinters(ctx)

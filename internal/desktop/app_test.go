@@ -144,10 +144,10 @@ func TestAppEndToEnd(t *testing.T) {
 	// A printer delivers a document, as the Windows spooler does through
 	// the printer's pipe.
 	pdf := []byte("%PDF-1.7 test document")
-	if err := app.Receive("lab", "Invoice 42", bytes.NewReader(pdf)); err != nil {
+	if err := app.Receive("lab", func() string { return "Invoice 42" }, bytes.NewReader(pdf)); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.Receive("lab", "", bytes.NewReader(nil)); err == nil {
+	if err := app.Receive("lab", func() string { return "" }, bytes.NewReader(nil)); err == nil {
 		t.Fatal("empty document accepted")
 	}
 

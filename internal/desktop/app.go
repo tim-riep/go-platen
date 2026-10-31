@@ -180,9 +180,11 @@ func (a *App) kickForwarder() {
 	}
 }
 
-// Receive stores a document a local printer delivered and starts sending
-// it. title is the document name from the print queue.
-func (a *App) Receive(printerID, title string, r io.Reader) error {
+// Receive stores a document a local printer delivers and starts sending it.
+// It reads r right away: the spooler may wait for the reader while holding
+// the printer, so the title (the document name in the print queue) comes
+// from title only after the document was read; it may return "".
+func (a *App) Receive(printerID string, title func() string, r io.Reader) error {
 	f, err := os.CreateTemp(a.incoming, "job-*")
 	if err != nil {
 		return err
@@ -201,10 +203,11 @@ func (a *App) Receive(printerID, title string, r io.Reader) error {
 		os.Remove(f.Name())
 		return err
 	}
-	if title == "" {
-		title = "Untitled"
+	name := title()
+	if name == "" {
+		name = "Untitled"
 	}
-	job, err := a.spool.Add(printerID, title, 1, f.Name(), time.Now())
+	job, err := a.spool.Add(printerID, name, 1, f.Name(), time.Now())
 	if err != nil {
 		os.Remove(f.Name())
 		return err
