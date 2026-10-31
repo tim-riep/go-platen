@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -18,7 +17,10 @@ import (
 )
 
 // largeDocument is about 50 pages of text, so that the PDF is larger than
-// the pipe buffer and the spooler has to wait for the receiver.
+// the buffers between spooler and receiver and the spooler has to wait for
+// the receiver.
+const minLargeDocument = 64 << 10
+
 const largeDocument = `(1..3000 | ForEach-Object { "platen test line $_ " + ('x' * 60) })`
 
 // TestWindowsPrinting installs real printers, prints on one and checks
@@ -56,7 +58,7 @@ func TestWindowsPrinting(t *testing.T) {
 	}
 	var lab string
 	for _, p := range installed {
-		if p.PortName == PortPrefix+"lab" {
+		if id, _, ok := p.Managed(); ok && id == "lab" {
 			lab = p.Name
 		}
 	}
@@ -84,8 +86,8 @@ func TestWindowsPrinting(t *testing.T) {
 		t.Errorf("no job title: %+v", jobs[0])
 	}
 	t.Logf("job %q, %d bytes", jobs[0].Title, jobs[0].Size)
-	if jobs[0].Size <= pipeBuffer {
-		t.Errorf("the document (%d bytes) fits into the pipe buffer, so the test does not cover a spooler that waits for the reader", jobs[0].Size)
+	if jobs[0].Size <= minLargeDocument {
+		t.Errorf("the document (%d bytes) is small, so the test does not cover a spooler that waits for the receiver", jobs[0].Size)
 	}
 
 	if err := app.Disconnect(ctx); err != nil {
@@ -93,7 +95,7 @@ func TestWindowsPrinting(t *testing.T) {
 	}
 	installed, _ = InstalledPrinters(ctx)
 	for _, p := range installed {
-		if strings.HasPrefix(p.PortName, PortPrefix) {
+		if _, ok := p.PrinterID(); ok {
 			t.Fatalf("printer left: %+v", p)
 		}
 	}
@@ -136,7 +138,7 @@ func TestWindowsService(t *testing.T) {
 	for ctx.Err() == nil && lab == "" {
 		installed, _ := InstalledPrinters(ctx)
 		for _, p := range installed {
-			if p.PortName == PortPrefix+"lab" {
+			if id, _, ok := p.Managed(); ok && id == "lab" {
 				lab = p.Name
 			}
 		}
@@ -177,14 +179,14 @@ func TestWindowsService(t *testing.T) {
 		t.Fatalf("jobs %+v", jobs)
 	}
 	t.Logf("job %q, %d bytes", jobs[0].Title, jobs[0].Size)
-	if jobs[0].Size <= pipeBuffer {
-		t.Errorf("the document (%d bytes) fits into the pipe buffer, so the test does not cover a spooler that waits for the reader", jobs[0].Size)
+	if jobs[0].Size <= minLargeDocument {
+		t.Errorf("the document (%d bytes) is small, so the test does not cover a spooler that waits for the receiver", jobs[0].Size)
 	}
 
 	platen("uninstall-service")
 	installed, _ := InstalledPrinters(ctx)
 	for _, p := range installed {
-		if strings.HasPrefix(strings.ToLower(p.PortName), strings.ToLower(PortPrefix)) {
+		if _, ok := p.PrinterID(); ok {
 			t.Fatalf("printer left: %+v", p)
 		}
 	}

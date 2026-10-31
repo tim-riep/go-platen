@@ -59,7 +59,7 @@ server later.
 
 ```
 Application ── Windows printer (Microsoft Print To PDF driver)
-             ── local port \\.\pipe\platen-<id> ──▶ Platen service ── spool ──▶ POST /client/v1/printers/<id>/jobs
+             ── Standard TCP/IP port (RAW) 127.0.0.1:<port> ──▶ Platen service ── spool ──▶ POST /client/v1/printers/<id>/jobs
                                                          ▲
                      tray icon / settings page (users) ──┘
 ```
@@ -71,22 +71,26 @@ Application ── Windows printer (Microsoft Print To PDF driver)
   `%ProgramData%\Platen`, which only SYSTEM and administrators may open,
   since the spool holds every user's documents.
 - **Printers.** Each platen printer becomes a printer with the built-in
-  "Microsoft Print To PDF" driver on a local port that is the named pipe
-  `\\.\pipe\platen-<printer ID>`. The driver renders every document to
-  PDF and the Windows spooler writes it into the pipe. The port name marks
-  the printers Platen manages. The paper size of the platen printer is the
+  "Microsoft Print To PDF" driver on a Standard TCP/IP port in RAW mode
+  to `127.0.0.1` and a port number of its own, named
+  `platen-<port>-<printer ID>`. The driver renders every document to PDF and
+  the Windows spooler sends it to that port. The port name marks the
+  printers Platen manages. The paper size of the platen printer is the
   default. The service uses the PrintManagement PowerShell cmdlets
-  (`Add-PrinterPort`, `Add-Printer`, `Rename-Printer`, `Remove-Printer`) and
-  checks every printer ID, name and paper size from the server before. The
-  installer turns the "Microsoft Print to PDF" Windows feature on if it is
-  off.
-- **Receiver.** The service listens on the pipe of every printer it
-  manages. Named pipes do not use network ports, so no other service can be
-  in the way, and their names are Platen's own. Only the spooler, the
-  signed-in users and administrators may open them; access over the
-  network is refused. The job title is the document name of the job in the
-  printer's Windows queue. If the service is stopped, Windows keeps the jobs
-  in its queue and retries.
+  (`Add-PrinterPort`, `Add-Printer`, `Set-Printer`, `Rename-Printer`,
+  `Remove-Printer`) and checks every printer ID, name, port and paper size
+  before. The installer turns the "Microsoft Print to PDF" Windows feature
+  on if it is off.
+- **Receiver.** The service listens on `127.0.0.1` only, with a free port
+  per printer that it picks itself. There is no fixed port that another
+  program could occupy: if a printer's port is taken when the service
+  starts, it listens on another one and moves the printer there. It reads a
+  job at once and takes the title from the document name in the printer's
+  Windows queue. If the service is stopped, Windows keeps the jobs in its
+  queue and retries.
+- **Earlier versions.** 0.1.3 and 0.1.4 used named pipes as ports, which
+  Windows 11 does not write print jobs into ("the file could not be
+  printed"). The service moves such printers to a TCP port when it starts.
 - **Spool and server.** Jobs wait in the spool until the server accepted
   them, with the same retries and idempotency keys as on macOS (see
   [macos.md](macos.md#how-it-works)), through the client API (`/client/v1`).

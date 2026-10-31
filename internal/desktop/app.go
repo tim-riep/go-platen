@@ -45,15 +45,7 @@ type App struct {
 	fwd      *Forwarder
 	incoming string
 	kick     chan struct{}
-	recv     receiver
-}
-
-// receiver accepts the print data of the local printers; on Windows each
-// printer writes to its own named pipe.
-type receiver interface {
-	// update listens for exactly the given printers and returns a message
-	// for the user if it cannot listen for some.
-	update(printers []LocalPrinter) string
+	recv     *tcpReceiver
 }
 
 // MaxDocument is the largest document the app accepts from a printer.
@@ -139,12 +131,29 @@ func (a *App) Start(ctx context.Context) error {
 		}
 	}
 
-	a.recv = newReceiver(ctx, a)
+	a.recv = newTCPReceiver(ctx, a)
 	// Receive for the installed printers at once, even while the server
-	// is unreachable.
+	// is unreachable, and move printers whose port is taken now.
 	go func() {
-		if ps, err := a.Printers.Installed(ctx); err == nil {
-			a.setReceiverErr(a.recv.update(managedOnly(ps)))
+		a.syncMu.Lock()
+		defer a.syncMu.Unlock()
+		installed, err := a.Printers.Installed(ctx)
+		if err != nil {
+			return
+		}
+		want := map[string]listenSpec{}
+		for _, p := range installed {
+			if id, port, ok := p.Managed(); ok {
+				want[id] = listenSpec{Name: p.Name, Port: port}
+			}
+		}
+		ports := a.listen(want)
+		if moves := PlanMoves(installed, ports); len(moves) > 0 {
+			if err := a.Printers.Apply(ctx, moves, ""); err != nil {
+				a.Log.Error("moving printers to new ports failed", "err", err)
+				return
+			}
+			a.Log.Info("printers moved to new ports", "printers", len(moves))
 		}
 	}()
 	go a.loop(ctx)
@@ -301,7 +310,8 @@ func (a *App) sync(ctx context.Context, address string) (err error) {
 	if err != nil {
 		return err
 	}
-	actions := PlanPrinters(installed, remote)
+	ports := a.listen(listenSpecs(remote, installed))
+	actions := PlanPrinters(installed, remote, ports)
 	if len(actions) > 0 {
 		host := c.BaseURL
 		if u, err := url.Parse(c.BaseURL); err == nil {
@@ -319,10 +329,35 @@ func (a *App) sync(ctx context.Context, address string) (err error) {
 	a.mu.Lock()
 	a.me, a.remote, a.local, a.lastSync = me, remote, managedOnly(installed), time.Now()
 	a.mu.Unlock()
-	a.setReceiverErr(a.recv.update(managedOnly(installed)))
+	// The receiver looks up job titles by the printers' current names.
+	a.listen(listenSpecs(remote, installed))
 	a.fwd.SetClient(c)
 	a.kickForwarder()
 	return nil
+}
+
+// listen makes the receiver listen for exactly the printers in want and
+// returns their ports.
+func (a *App) listen(want map[string]listenSpec) map[string]int {
+	ports, msg := a.recv.listen(want)
+	a.setReceiverErr(msg)
+	return ports
+}
+
+// listenSpecs describes the wanted printers with their current local name
+// and port.
+func listenSpecs(remote []api.Printer, installed []LocalPrinter) map[string]listenSpec {
+	local := map[string]listenSpec{}
+	for _, p := range installed {
+		if id, port, ok := p.Managed(); ok {
+			local[id] = listenSpec{Name: p.Name, Port: port}
+		}
+	}
+	want := map[string]listenSpec{}
+	for _, r := range WantedPrinters(remote) {
+		want[r.ID] = local[r.ID]
+	}
+	return want
 }
 
 func managedOnly(ps []LocalPrinter) []LocalPrinter {
@@ -368,7 +403,7 @@ func (a *App) RemovePrinters(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	actions := PlanPrinters(installed, nil)
+	actions := PlanPrinters(installed, nil, nil)
 	if err := a.Printers.Apply(ctx, actions, ""); err != nil {
 		return err
 	}
@@ -376,7 +411,7 @@ func (a *App) RemovePrinters(ctx context.Context) error {
 	a.local = nil
 	a.mu.Unlock()
 	if a.recv != nil {
-		a.setReceiverErr(a.recv.update(nil))
+		a.listen(nil)
 	}
 	return nil
 }

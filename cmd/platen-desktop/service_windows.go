@@ -191,7 +191,7 @@ func uninstallService(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return desktop.ApplyPrinters(ctx, desktop.PlanPrinters(installed, nil), "")
+	return desktop.ApplyPrinters(ctx, desktop.PlanPrinters(installed, nil, nil), "")
 }
 
 // setServer stores the server for the service; a running service is

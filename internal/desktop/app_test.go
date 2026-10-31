@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -47,23 +49,37 @@ func (f *fakePrinters) Apply(_ context.Context, actions []PrinterAction, _ strin
 	defer f.mu.Unlock()
 	f.applied = append(f.applied, actions)
 	for _, a := range actions {
+		i := slices.IndexFunc(f.list, func(p LocalPrinter) bool { id, ok := p.PrinterID(); return ok && id == a.PrinterID })
 		switch a.Kind {
 		case "add":
-			f.list = append(f.list, LocalPrinter{Name: a.Name, PortName: PortPrefix + a.PrinterID})
-		case "rename", "remove":
-			for i, p := range f.list {
-				if p.PortName == PortPrefix+a.PrinterID {
-					if a.Kind == "remove" {
-						f.list = append(f.list[:i], f.list[i+1:]...)
-					} else {
-						f.list[i].Name = a.Name
-					}
-					break
-				}
-			}
+			f.list = append(f.list, LocalPrinter{Name: a.Name, PortName: PortName(a.PrinterID, a.Port)})
+		case "move":
+			f.list[i].PortName = PortName(a.PrinterID, a.Port)
+		case "rename":
+			f.list[i].Name = a.Name
+		case "remove":
+			f.list = slices.Delete(f.list, i, i+1)
 		}
 	}
 	return nil
+}
+
+func (f *fakePrinters) changes() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.applied)
+}
+
+func (f *fakePrinters) port(t *testing.T, id string) int {
+	t.Helper()
+	l, _ := f.Installed(context.Background())
+	for _, p := range l {
+		if pid, port, ok := p.Managed(); ok && pid == id {
+			return port
+		}
+	}
+	t.Fatalf("printer %s not installed: %+v", id, l)
+	return 0
 }
 
 type login struct{ on bool }
@@ -141,12 +157,14 @@ func TestAppEndToEnd(t *testing.T) {
 		t.Fatalf("local names %v", names)
 	}
 
-	// A printer delivers a document, as the Windows spooler does through
-	// the printer's pipe.
+	// The spooler sends a document to the printer's port.
 	pdf := []byte("%PDF-1.7 test document")
-	if err := app.Receive("lab", func() string { return "Invoice 42" }, bytes.NewReader(pdf)); err != nil {
+	c, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", printers.port(t, "lab")))
+	if err != nil {
 		t.Fatal(err)
 	}
+	c.Write(pdf)
+	c.Close()
 	if err := app.Receive("lab", func() string { return "" }, bytes.NewReader(nil)); err == nil {
 		t.Fatal("empty document accepted")
 	}
@@ -159,7 +177,8 @@ func TestAppEndToEnd(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if len(jobs) != 1 || jobs[0].QueueID != "lab" || jobs[0].Title != "Invoice 42" || jobs[0].AppClientID != "device:127.0.0.1" ||
+	// Outside Windows there is no print queue to take the title from.
+	if len(jobs) != 1 || jobs[0].QueueID != "lab" || jobs[0].Title != "Untitled" || jobs[0].AppClientID != "device:127.0.0.1" ||
 		jobs[0].ContentType != "application/pdf" || jobs[0].Size != int64(len(pdf)) {
 		t.Fatalf("jobs %+v", jobs)
 	}
@@ -202,6 +221,45 @@ func TestAppEndToEnd(t *testing.T) {
 	}
 	if l, _ := printers.Installed(ctx); len(l) != 1 || l[0].PortName != "USB001" || app.Address() != "" {
 		t.Fatalf("after disconnect %+v", l)
+	}
+}
+
+// TestPortMoves starts the app with a printer whose port is taken and one
+// on an old pipe port; both are moved to ports the app listens on.
+func TestPortMoves(t *testing.T) {
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy.Close()
+	taken := busy.Addr().(*net.TCPAddr).Port
+	printers := &fakePrinters{list: []LocalPrinter{
+		{Name: "Office", PortName: PortName("office", taken)},
+		{Name: "Lab", PortName: `\\.\pipe\platen-lab`},
+		{Name: "Other", PortName: "USB001"},
+	}}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	app := &App{Dir: t.TempDir(), Version: "test", Printers: printers, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if err := app.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 100 && printers.changes() == 0; i++ {
+		time.Sleep(20 * time.Millisecond)
+	}
+	office, lab := printers.port(t, "office"), printers.port(t, "lab")
+	if office == taken || office == 0 || lab == 0 {
+		t.Fatalf("ports office %d (taken %d), lab %d", office, taken, lab)
+	}
+	for _, port := range []int{office, lab} {
+		c, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err != nil {
+			t.Fatalf("not listening on %d: %v", port, err)
+		}
+		c.Close()
+	}
+	if l, _ := printers.Installed(ctx); l[2].PortName != "USB001" {
+		t.Fatalf("foreign printer changed: %+v", l)
 	}
 }
 

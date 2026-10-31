@@ -11,49 +11,65 @@ import (
 
 func TestPlanPrinters(t *testing.T) {
 	installed := []LocalPrinter{
-		{Name: "Office", PortName: PortPrefix + "office"},
-		{Name: "Old", PortName: `\\.\PIPE\Platen-old`}, // ports are case-insensitive
-		{Name: "Lab", PortName: "USB001"},              // someone else's printer named Lab
+		{Name: "Office", PortName: PortName("office", 50001)},
+		{Name: "Old", PortName: "PLATEN-50002-old"}, // port names are case-insensitive
+		{Name: "Hall", PortName: `\\.\PIPE\platen-hall`},
+		{Name: "Lab", PortName: "USB001"}, // someone else's printer named Lab
 		{Name: "Microsoft Print to PDF", PortName: "PORTPROMPT:"},
 	}
 	remote := []api.Printer{
 		{ID: "office", Name: "Office 2", PaperSize: "A4"},
 		{ID: "lab", Name: "lab", PaperSize: "letter"},
-		{ID: "hall", Name: `Hall\East, 1`},
-		{ID: "hall2", Name: "Hall-East- 1"},
+		{ID: "hall", Name: "Hall"},
+		{ID: "east", Name: `East\Wing, 1`},
+		{ID: "east2", Name: "East-Wing- 1"},
+		{ID: "noport", Name: "No port"},
 		{ID: "zebra", Name: "Labels", ContentTypes: []string{"application/vnd.zebra-zpl"}},
 	}
-	got := PlanPrinters(installed, remote)
+	ports := map[string]int{"office": 50001, "lab": 50003, "hall": 50004, "east": 50005, "east2": 50006}
+	got := PlanPrinters(installed, remote, ports)
 	want := []PrinterAction{
-		{Kind: "remove", PrinterID: "old", Name: "Old"},
-		{Kind: "add", PrinterID: "hall", Name: "Hall-East- 1"},
-		{Kind: "add", PrinterID: "hall2", Name: "Hall-East- 1 (hall2)"},
-		{Kind: "add", PrinterID: "lab", Name: "lab (platen)", PaperSize: "Letter"},
+		{Kind: "remove", PrinterID: "old", Name: "Old", OldPort: "PLATEN-50002-old"},
+		{Kind: "move", PrinterID: "hall", Name: "Hall", Port: 50004, OldPort: `\\.\PIPE\platen-hall`},
+		{Kind: "add", PrinterID: "east", Name: "East-Wing- 1", Port: 50005},
+		{Kind: "add", PrinterID: "east2", Name: "East-Wing- 1 (east2)", Port: 50006},
+		{Kind: "add", PrinterID: "lab", Name: "lab (platen)", Port: 50003, PaperSize: "Letter"},
 		{Kind: "rename", PrinterID: "office", Name: "Office 2", OldName: "Office"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("plan\n got %+v\nwant %+v", got, want)
 	}
-	// Removing everything touches only the app's printers.
-	all := PlanPrinters(installed, nil)
-	if len(all) != 2 || all[0].Kind != "remove" || all[1].Kind != "remove" {
-		t.Fatalf("remove all %+v", all)
-	}
-	if _, ok := (LocalPrinter{PortName: PortPrefix + "../x"}).PrinterID(); ok {
-		t.Fatal("invalid ID in a port name accepted")
-	}
 	if err := (PrinterChange{Location: "platen on x", Actions: got}).Validate(); err != nil {
 		t.Fatal(err)
+	}
+	// A printer whose port is taken moves.
+	moves := PlanMoves(installed, map[string]int{"office": 50010, "hall": 50004})
+	if len(moves) != 2 || moves[0].Port != 50010 || moves[0].OldPort != PortName("office", 50001) || moves[1].PrinterID != "hall" {
+		t.Fatalf("moves %+v", moves)
+	}
+	// Removing everything touches only the app's printers.
+	all := PlanPrinters(installed, nil, nil)
+	if len(all) != 3 {
+		t.Fatalf("remove all %+v", all)
+	}
+	for _, name := range []string{"platen-0-x", "platen-70000-x", "platen-01-x", "platen-5-../x", "platen-x", "platen_x"} {
+		if _, _, ok := parsePortName(name); ok {
+			t.Errorf("port name %q accepted", name)
+		}
 	}
 }
 
 func TestPrinterChangeValidate(t *testing.T) {
 	for _, a := range []PrinterAction{
-		{Kind: "add", PrinterID: "../x", Name: "x"},
-		{Kind: "add", PrinterID: "x", Name: `a\b`},
-		{Kind: "add", PrinterID: "x", Name: "x", PaperSize: "A4; rm"},
+		{Kind: "add", PrinterID: "../x", Name: "x", Port: 1},
+		{Kind: "add", PrinterID: "x", Name: `a\b`, Port: 1},
+		{Kind: "add", PrinterID: "x", Name: "x", Port: 1, PaperSize: "A4; rm"},
+		{Kind: "add", PrinterID: "x", Name: "x"},
 		{Kind: "exec", PrinterID: "x", Name: "x"},
 		{Kind: "rename", PrinterID: "x", Name: "x"},
+		{Kind: "remove", PrinterID: "x", Name: "x", OldPort: "USB001"},
+		{Kind: "remove", PrinterID: "x", Name: "x", OldPort: PortName("y", 5)},
+		{Kind: "move", PrinterID: "x", Name: "x", Port: 0, OldPort: PortName("x", 5)},
 	} {
 		if (PrinterChange{Actions: []PrinterAction{a}}).Validate() == nil {
 			t.Errorf("accepted %+v", a)
@@ -63,15 +79,19 @@ func TestPrinterChangeValidate(t *testing.T) {
 
 func TestApplyScript(t *testing.T) {
 	s := ApplyScript([]PrinterAction{
-		{Kind: "remove", PrinterID: "old", Name: "Old"},
-		{Kind: "add", PrinterID: "lab", Name: "Bob's printer", PaperSize: "A4"},
+		{Kind: "remove", PrinterID: "old", Name: "Old", OldPort: PortName("old", 50002)},
+		{Kind: "move", PrinterID: "hall", Name: "Hall", Port: 50004, OldPort: `\\.\pipe\platen-hall`},
+		{Kind: "add", PrinterID: "lab", Name: "Bob's printer", Port: 50003, PaperSize: "A4"},
 		{Kind: "rename", PrinterID: "office", Name: "Office 2", OldName: "Office"},
 	}, "platen on server")
 	for _, want := range []string{
 		"Remove-Printer -Name 'Old'",
-		`Remove-PrinterPort -Name '\\.\pipe\platen-old'`,
-		`Add-PrinterPort -Name '\\.\pipe\platen-lab'`,
-		`Add-Printer -Name 'Bob''s printer' -DriverName 'Microsoft Print To PDF' -PortName '\\.\pipe\platen-lab' -Location 'platen on server'`,
+		"Remove-PrinterPort -Name 'platen-50002-old'",
+		"Add-PrinterPort -Name 'platen-50004-hall' -PrinterHostAddress '127.0.0.1' -PortNumber 50004",
+		"Set-Printer -Name 'Hall' -PortName 'platen-50004-hall'",
+		`Remove-PrinterPort -Name '\\.\pipe\platen-hall'`,
+		"Add-PrinterPort -Name 'platen-50003-lab' -PrinterHostAddress '127.0.0.1' -PortNumber 50003",
+		"Add-Printer -Name 'Bob''s printer' -DriverName 'Microsoft Print To PDF' -PortName 'platen-50003-lab' -Location 'platen on server'",
 		"Set-PrintConfiguration -PrinterName 'Bob''s printer' -PaperSize A4",
 		"Rename-Printer -Name 'Office' -NewName 'Office 2'",
 		"exit 1",

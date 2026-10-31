@@ -15,7 +15,6 @@ require (
 require (
 	cunicu.li/go-rosenpass v0.5.42 // indirect
 	github.com/DeRuina/timberjack v1.4.2 // indirect
-	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/aws/aws-sdk-go-v2 v1.38.3 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.31.6 // indirect
