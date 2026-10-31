@@ -52,7 +52,7 @@ jobs:
           tar -C build --owner=0 --group=0 --numeric-owner -czf "dist/$name.tar.gz" "$name"
       - uses: actions/upload-artifact@v4
         with:
-          name: binaries-${{ matrix.goarch }}
+          name: release-binaries-${{ matrix.goarch }}
           path: dist/*
 
   macos:
@@ -84,7 +84,7 @@ jobs:
         run: if [ -n "${MACOS_KEYCHAIN:-}" ]; then security delete-keychain "$MACOS_KEYCHAIN"; fi
       - uses: actions/upload-artifact@v4
         with:
-          name: macos
+          name: release-macos
           path: desktop/macos/build/*.pkg
 
   windows:
@@ -115,7 +115,7 @@ jobs:
         run: VERSION=${VERSION#v} desktop/windows/build.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: windows
+          name: release-windows
           path: desktop/windows/build/*-setup.exe
 
   image:
@@ -141,6 +141,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -156,8 +158,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      # Only the release files: the image job also stores a build record
+      # (*.dockerbuild) that download-artifact cannot extract.
       - uses: actions/download-artifact@v4
         with:
+          pattern: release-*
           path: artifacts
           merge-multiple: true
       - name: create release
