@@ -101,8 +101,24 @@ if [ $NOTARIZE = 1 ]; then
 		exit 1
 		;;
 	esac
-	xcrun stapler staple "$PKG"
-	spctl --assess --type install --verbose=2 "$PKG"
+	# Fetching the ticket from Apple's server fails now and then (the
+	# connection drops). The package is notarized either way: without a
+	# stapled ticket, Gatekeeper asks Apple online when it is opened.
+	stapled=0
+	for try in 1 2 3 4 5; do
+		if xcrun stapler staple "$PKG"; then
+			stapled=1
+			break
+		fi
+		echo "stapling failed (attempt $try)" >&2
+		[ "$try" = 5 ] || sleep 30
+	done
+	if [ $stapled = 1 ]; then
+		spctl --assess --type install --verbose=2 "$PKG"
+	else
+		msg="the notarization ticket could not be stapled; $PKG is notarized, Gatekeeper checks it online"
+		if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::warning::$msg"; else echo "warning: $msg" >&2; fi
+	fi
 fi
 
 rm -rf "$OUT/root" "$OUT/scripts" "$OUT/AppIcon.iconset" "$OUT/component.plist" "$OUT/distribution.xml" "$OUT/Platen-component.pkg"
