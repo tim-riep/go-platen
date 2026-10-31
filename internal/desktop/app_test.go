@@ -251,12 +251,13 @@ func TestPortMoves(t *testing.T) {
 	if office == taken || office == 0 || lab == 0 {
 		t.Fatalf("ports office %d (taken %d), lab %d", office, taken, lab)
 	}
+	// The app listens on the new ports. Checked without connecting: an
+	// empty connection would leave a file behind for a moment.
 	for _, port := range []int{office, lab} {
-		c, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-		if err != nil {
-			t.Fatalf("not listening on %d: %v", port, err)
+		if ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port)); err == nil {
+			ln.Close()
+			t.Fatalf("not listening on %d", port)
 		}
-		c.Close()
 	}
 	if l, _ := printers.Installed(ctx); l[2].PortName != "USB001" {
 		t.Fatalf("foreign printer changed: %+v", l)
