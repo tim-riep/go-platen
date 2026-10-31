@@ -82,6 +82,13 @@ NetBird IPv4 address as admin or viewer and bound to their NetBird peer.
 Optionally, a NetBird API token lets all devices of a NetBird user share the
 user's role. See [docs/panel.md](docs/panel.md).
 
+## macOS app
+
+A menu bar app installs every printer of a platen server as a local macOS
+printer, so any app can print to it as PDF. The Mac only needs NetBird and
+the server's address; it may print if it has a panel role or belongs to a
+NetBird user. Installer, signing and notarization: [docs/macos.md](docs/macos.md).
+
 ## Container image
 
 `ghcr.io/tim-riep/go-platen` (amd64 and arm64, built `FROM scratch`, non-root,
@@ -115,6 +122,7 @@ metadata, documents as raw request bodies, errors as
 | Worker | worker credential + NetBird peer | `POST /worker/v1/register`, `GET /worker/v1/config`, `POST /worker/v1/lease`, `GET /worker/v1/jobs/{id}/document`, `POST /worker/v1/jobs/{id}/progress`, `…/complete`, `…/fail`, `POST /worker/v1/heartbeat` |
 | Admin | admin token | workers, enrollment tokens, printers, app clients, jobs, printing a file, panel users under `/admin/v1` |
 | Web panel | NetBird peer of a panel user | the page at `/` and its API under `/panel/v1` |
+| Client | NetBird peer with print access | `GET /client/v1/me`, `GET /client/v1/printers`, `POST /client/v1/printers/{id}/jobs`, `GET /client/v1/jobs/{id}` |
 
 ## Development
 

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Start Platen for the logged-in user; it asks for the print server on the
+# first start.
+user=$(stat -f %Su /dev/console)
+if [ -n "$user" ] && [ "$user" != root ] && [ "$user" != loginwindow ]; then
+	uid=$(id -u "$user")
+	launchctl asuser "$uid" sudo -u "$user" open -g /Applications/Platen.app || true
+fi
+exit 0

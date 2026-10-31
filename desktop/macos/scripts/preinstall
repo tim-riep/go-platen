@@ -1,0 +1,4 @@
+#!/bin/sh
+# Quit a running Platen so the new version replaces it.
+pkill -x Platen 2>/dev/null || true
+exit 0

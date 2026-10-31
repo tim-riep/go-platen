@@ -83,6 +83,26 @@ jobs:
           name: platen-linux-${{ matrix.goarch }}
           path: dist/platen-linux-${{ matrix.goarch }}
 
+  # Builds the macOS app and an unsigned installer. Signed and notarized
+  # packages are built locally, see docs/macos.md.
+  macos:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: desktop/macos
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: checks
+        run: swift run PlatenChecks
+      - name: build
+        run: ./build.sh --no-sign
+      - uses: actions/upload-artifact@v4
+        with:
+          name: platen-macos-unsigned
+          path: desktop/macos/build/*.pkg
+
   # Builds the container image for amd64 and arm64 on every run. It is pushed
   # to the GitHub Container Registry only for version tags (v*).
   image:
