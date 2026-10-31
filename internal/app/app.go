@@ -22,6 +22,7 @@ import (
 	"github.com/tim-riep/go-platen/internal/brother"
 	"github.com/tim-riep/go-platen/internal/config"
 	"github.com/tim-riep/go-platen/internal/mesh"
+	"github.com/tim-riep/go-platen/internal/netbirdapi"
 	"github.com/tim-riep/go-platen/internal/server"
 	"github.com/tim-riep/go-platen/internal/spool"
 	"github.com/tim-riep/go-platen/internal/store"
@@ -67,6 +68,9 @@ func RunServer(ctx context.Context, cfg *config.Server, n mesh.Network, log *slo
 		Version: version,
 		Panel:   cfg.Panel.IsEnabled(), PanelHosts: panelHosts(n, cfg.Panel.AllowedHosts),
 		BackendNames: backends.Names(),
+		// The management server serves the API used by the NetBird user
+		// sync of the panel.
+		NetBirdAPIURL: netbirdapi.BaseURLFor(cfg.NetBird.ManagementURL),
 	})
 	if err != nil {
 		return err

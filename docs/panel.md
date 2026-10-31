@@ -39,6 +39,31 @@ inherit the access.
   re-registered in NetBird; the next visit binds the new peer.
 - The last admin can be neither removed nor demoted.
 
+## NetBird user sync
+
+Optionally, an admin enters a **NetBird API access token** under *Panel
+users → NetBird user sync*. The server then reads every minute which NetBird
+user each device (peer) belongs to, through NetBird's REST API (`/api/peers`
+and `/api/users`). Every device of a NetBird user gets the **highest role any
+of that user's devices has**: if your laptop is a panel admin, your phone is
+an admin too, without its own entry. A device with its own entry gets the
+higher of its own and the inherited role; the stored entry is not changed.
+
+- The API URL defaults to the server's NetBird management URL.
+- The token is checked against the API when it is saved, stored in the
+  server's database and never shown again (only its last four characters).
+  Use a **NetBird service user** with the smallest role that can read peers
+  and users, and remove the token in the panel to end the sync.
+- An inherited role requires that the device's NetBird name in the API
+  matches the peer that connects, so synced data about a reused IP never
+  grants access. Blocked NetBird users get no inherited role.
+- Devices registered with a setup key belong to no NetBird user and inherit
+  nothing.
+- If syncing fails (e.g. the token was revoked), the last data is used for at
+  most 10 minutes; after that inherited roles end until a sync succeeds.
+- The admin API offers the same: `GET`, `PUT`, `DELETE /admin/v1/netbird`
+  and `POST /admin/v1/netbird/sync`.
+
 Panel users need no token; the NetBird identity is the credential. The NetBird
 access policies decide which peers can reach the server at all
 ([netbird.md](netbird.md)).

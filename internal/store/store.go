@@ -334,4 +334,9 @@ type Store interface {
 	// DeletePanelUser returns ErrConflict if no admin would be left.
 	DeletePanelUser(ctx context.Context, ip string) error
 	TouchPanelUser(ctx context.Context, ip string, at time.Time) error
+
+	// GetSetting returns ErrNotFound for a setting that is not set.
+	GetSetting(ctx context.Context, key string) (string, error)
+	SetSetting(ctx context.Context, key, value string, at time.Time) error
+	DeleteSetting(ctx context.Context, key string) error
 }

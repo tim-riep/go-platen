@@ -43,11 +43,22 @@ type panelCtxKey struct{}
 type panelSession struct {
 	user       *store.PanelUser
 	firstAdmin bool
+	// via names the NetBird user whose other device grants the role.
+	via string
 }
 
 func panelSessionFrom(ctx context.Context) *panelSession {
 	s, _ := ctx.Value(panelCtxKey{}).(*panelSession)
 	return s
+}
+
+// panelUserView adds the NetBird user of the device, if known.
+func (s *Server) panelUserView(u *store.PanelUser) api.PanelUser {
+	out := apiPanelUser(u)
+	if dev, ok := s.nb.device(u.IP); ok {
+		out.NetBirdUser = nbUserLabel(dev.User)
+	}
+	return out
 }
 
 func apiPanelUser(u *store.PanelUser) api.PanelUser {
@@ -114,6 +125,17 @@ func (s *Server) panelAuth(admin bool, h http.HandlerFunc) http.HandlerFunc {
 		ctx := r.Context()
 		now := s.opts.Now()
 		sess := &panelSession{}
+		// The role inherited from other devices of the same NetBird user.
+		inherited, via, err := s.inheritedRole(ctx, ip, peer)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		viaNetBird := func() *store.PanelUser {
+			sess.via = via
+			return &store.PanelUser{IP: ip, PeerID: peer.ID, PeerFQDN: peer.FQDN, Role: inherited, CreatedAt: now, UpdatedAt: now}
+		}
+		explicit := true
 		u, err := s.store.GetPanelUser(ctx, ip)
 		switch {
 		case errors.Is(err, store.ErrNotFound):
@@ -125,6 +147,10 @@ func (s *Server) panelAuth(admin bool, h http.HandlerFunc) http.HandlerFunc {
 			} else if !errors.Is(err, store.ErrConflict) {
 				s.fail(w, r, err)
 				return
+			}
+			if inherited != "" {
+				u, explicit = viaNetBird(), false
+				break
 			}
 			s.log.Info("panel: access by unknown peer refused", "ip", ip, "peer", peer.ID, "fqdn", peer.FQDN)
 			writeError(w, errForbidden("%s is not a panel user; ask a panel admin to add this NetBird IP", ip))
@@ -140,15 +166,25 @@ func (s *Server) panelAuth(admin bool, h http.HandlerFunc) http.HandlerFunc {
 			}
 			s.log.Info("panel: user bound to peer", "ip", ip, "peer", peer.ID, "fqdn", peer.FQDN)
 		case u.PeerID != peer.ID:
+			if inherited != "" {
+				u, explicit = viaNetBird(), false
+				break
+			}
 			s.log.Warn("panel: access from a different peer refused", "ip", ip, "bound", u.PeerID, "peer", peer.ID)
 			writeError(w, errForbidden("%s belongs to a different NetBird peer than when access was granted; ask a panel admin to reset it", ip))
 			return
+		}
+		if explicit && roleRank(inherited) > roleRank(u.Role) {
+			// Another device of the same NetBird user has a higher role.
+			elevated := *u
+			elevated.Role, sess.via = inherited, via
+			u = &elevated
 		}
 		if admin && u.Role != store.PanelAdmin {
 			writeError(w, errForbidden("this action needs the admin role"))
 			return
 		}
-		if u.LastSeen == nil || now.Sub(*u.LastSeen) >= lastSeenInterval {
+		if explicit && (u.LastSeen == nil || now.Sub(*u.LastSeen) >= lastSeenInterval) {
 			if err := s.store.TouchPanelUser(ctx, ip, now); err == nil {
 				u.LastSeen = &now
 			}
@@ -220,11 +256,17 @@ func (s *Server) panelRoutes(mux *http.ServeMux) {
 	edit("PATCH /panel/v1/users/{ip}", s.updatePanelUser)
 	edit("DELETE /panel/v1/users/{ip}", s.deletePanelUser)
 	edit("POST /panel/v1/users/{ip}/reset-peer", s.resetPanelUserPeer)
+
+	// NetBird user sync.
+	edit("GET /panel/v1/netbird", s.getNetBirdSync)
+	edit("PUT /panel/v1/netbird", s.putNetBirdSync)
+	edit("DELETE /panel/v1/netbird", s.deleteNetBirdSync)
+	edit("POST /panel/v1/netbird/sync", s.syncNetBirdNow)
 }
 
 func (s *Server) panelMe(w http.ResponseWriter, r *http.Request) {
 	sess := panelSessionFrom(r.Context())
-	writeJSON(w, http.StatusOK, api.PanelMe{PanelUser: apiPanelUser(sess.user), FirstAdmin: sess.firstAdmin, Version: s.opts.Version})
+	writeJSON(w, http.StatusOK, api.PanelMe{PanelUser: s.panelUserView(sess.user), FirstAdmin: sess.firstAdmin, Version: s.opts.Version, Via: sess.via})
 }
 
 func (s *Server) panelBackends(w http.ResponseWriter, r *http.Request) {
@@ -267,7 +309,7 @@ func (s *Server) listPanelUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	out := api.List[api.PanelUser]{Items: []api.PanelUser{}}
 	for i := range users {
-		out.Items = append(out.Items, apiPanelUser(&users[i]))
+		out.Items = append(out.Items, s.panelUserView(&users[i]))
 	}
 	writeJSON(w, http.StatusOK, out)
 }

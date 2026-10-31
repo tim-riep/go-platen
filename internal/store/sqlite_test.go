@@ -538,3 +538,25 @@ func TestRetryAndDeleteJob(t *testing.T) {
 		t.Fatalf("delete twice: %v", err)
 	}
 }
+
+func TestSettings(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	if _, err := s.GetSetting(ctx, "k"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing: %v", err)
+	}
+	for _, v := range []string{"a", "b"} {
+		if err := s.SetSetting(ctx, "k", v, t0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if v, err := s.GetSetting(ctx, "k"); err != nil || v != "b" {
+		t.Fatalf("get: %q %v", v, err)
+	}
+	if err := s.DeleteSetting(ctx, "k"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetSetting(ctx, "k"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted: %v", err)
+	}
+}

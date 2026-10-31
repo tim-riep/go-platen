@@ -64,6 +64,10 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	handle("PATCH /admin/v1/panel-users/{ip}", s.updatePanelUser)
 	handle("DELETE /admin/v1/panel-users/{ip}", s.deletePanelUser)
 	handle("POST /admin/v1/panel-users/{ip}/reset-peer", s.resetPanelUserPeer)
+	handle("GET /admin/v1/netbird", s.getNetBirdSync)
+	handle("PUT /admin/v1/netbird", s.putNetBirdSync)
+	handle("DELETE /admin/v1/netbird", s.deleteNetBirdSync)
+	handle("POST /admin/v1/netbird/sync", s.syncNetBirdNow)
 
 	handle("POST /admin/v1/printers/{id}/jobs", s.adminSubmitJob)
 	handle("GET /admin/v1/jobs", s.adminListJobs)

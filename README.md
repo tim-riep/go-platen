@@ -78,8 +78,9 @@ curl -X POST "http://platen-server.netbird.cloud/v1/printers/zebra/jobs?title=La
 
 The server serves a web panel on the same port inside the mesh. The first
 NetBird peer that opens it becomes its admin; further users are added by
-NetBird IPv4 address as admin or viewer and bound to their NetBird peer. See
-[docs/panel.md](docs/panel.md).
+NetBird IPv4 address as admin or viewer and bound to their NetBird peer.
+Optionally, a NetBird API token lets all devices of a NetBird user share the
+user's role. See [docs/panel.md](docs/panel.md).
 
 ## Container image
 

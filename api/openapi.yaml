@@ -622,6 +622,55 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/PanelUser" }
 
+  /admin/v1/netbird:
+    get:
+      tags: [admin]
+      summary: State of the NetBird user sync of the web panel
+      security: [{ adminToken: [] }]
+      responses:
+        "200":
+          description: Sync state and devices of NetBird users
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NetBirdSync" }
+    put:
+      tags: [admin]
+      summary: Store the NetBird API URL and access token (checked first)
+      security: [{ adminToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                api_url: { type: string, description: "Without /api; defaults to the management URL" }
+                token: { type: string, description: "Empty keeps the stored token" }
+      responses:
+        "200":
+          description: Stored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NetBirdSync" }
+        "400": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: Remove the token and end the sync
+      security: [{ adminToken: [] }]
+      responses:
+        "204": { description: Removed }
+  /admin/v1/netbird/sync:
+    post:
+      tags: [admin]
+      summary: Sync now
+      security: [{ adminToken: [] }]
+      responses:
+        "200":
+          description: Sync state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NetBirdSync" }
+
   /admin/v1/printers/{id}/jobs:
     post:
       tags: [admin]
@@ -915,6 +964,28 @@ components:
         bound: { type: boolean, description: false until the first visit binds the peer }
         created_at: { type: string, format: date-time }
         last_seen: { type: string, format: date-time }
+    NetBirdSync:
+      type: object
+      properties:
+        configured: { type: boolean }
+        api_url: { type: string }
+        token_hint: { type: string, description: Last characters of the stored token }
+        last_sync: { type: string, format: date-time }
+        error: { type: string }
+        users: { type: integer }
+        devices:
+          type: array
+          items:
+            type: object
+            properties:
+              ip: { type: string }
+              name: { type: string }
+              dns_label: { type: string }
+              os: { type: string }
+              connected: { type: boolean }
+              user: { type: string }
+              role: { type: string, enum: [admin, viewer], description: Effective panel role; absent means no access }
+              source: { type: string, enum: [user, netbird] }
     PanelUserRequest:
       type: object
       properties:

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tim-riep/go-platen/internal/auth"
+	"github.com/tim-riep/go-platen/internal/netbirdapi"
 	"github.com/tim-riep/go-platen/internal/spool"
 	"github.com/tim-riep/go-platen/internal/store"
 )
@@ -66,6 +67,12 @@ type Options struct {
 	PanelHosts func() []string
 	// BackendNames lists the available backends for the panel.
 	BackendNames []string
+	// NetBirdAPIURL is the default URL of the NetBird management API for
+	// the NetBird user sync; NetBirdHTTP is its HTTP client (nil means
+	// http.DefaultClient).
+	NetBirdAPIURL       string
+	NetBirdHTTP         *http.Client
+	NetBirdSyncInterval time.Duration
 
 	// Now returns the current time; tests may override it.
 	Now func() time.Time
@@ -99,6 +106,12 @@ func (o *Options) setDefaults() {
 	if o.EnrollmentTTL <= 0 {
 		o.EnrollmentTTL = 24 * time.Hour
 	}
+	if o.NetBirdAPIURL == "" {
+		o.NetBirdAPIURL = netbirdapi.DefaultURL
+	}
+	if o.NetBirdSyncInterval <= 0 {
+		o.NetBirdSyncInterval = time.Minute
+	}
 	if o.LocalWorkerName == "" {
 		o.LocalWorkerName = "built-in worker"
 	}
@@ -114,6 +127,7 @@ type Server struct {
 	spool  *spool.Spool
 	log    *slog.Logger
 	notify *notifier
+	nb     *nbDirectory
 	// Workers is the worker side service, shared by the HTTP worker API and
 	// the in-process transport of the built-in worker.
 	Workers *WorkerService
@@ -137,6 +151,7 @@ func New(opts Options) (*Server, error) {
 		spool:  opts.Spool,
 		log:    opts.Logger,
 		notify: newNotifier(),
+		nb:     &nbDirectory{},
 	}
 	s.Workers = &WorkerService{s: s}
 	return s, nil
@@ -174,6 +189,9 @@ func (s *Server) Run(ctx context.Context) {
 	defer expiry.Stop()
 	cleanup := time.NewTicker(s.opts.CleanupInterval)
 	defer cleanup.Stop()
+	if s.opts.Panel {
+		go s.netbirdLoop(ctx)
+	}
 	s.Cleanup(ctx)
 	for {
 		select {

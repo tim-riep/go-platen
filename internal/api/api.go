@@ -303,9 +303,12 @@ type PanelUser struct {
 	PeerID   string `json:"peer_id,omitempty"`
 	PeerFQDN string `json:"peer_fqdn,omitempty"`
 	// Bound is false until the user's first visit binds the peer.
-	Bound     bool       `json:"bound"`
-	CreatedAt time.Time  `json:"created_at"`
-	LastSeen  *time.Time `json:"last_seen,omitempty"`
+	Bound bool `json:"bound"`
+	// NetBirdUser is the NetBird user of the device, if the NetBird user
+	// sync is configured.
+	NetBirdUser string     `json:"netbird_user,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	LastSeen    *time.Time `json:"last_seen,omitempty"`
 }
 
 // PanelUserRequest creates or updates a panel user. On update, nil fields
@@ -323,10 +326,49 @@ type PanelMe struct {
 	// first admin.
 	FirstAdmin bool   `json:"first_admin,omitempty"`
 	Version    string `json:"version"`
+	// Via names the NetBird user whose other device grants the role, when
+	// the role is inherited through the NetBird user sync.
+	Via string `json:"via,omitempty"`
 }
 
 // Backend describes a printer backend.
 type Backend struct {
 	Name         string   `json:"name"`
 	ContentTypes []string `json:"content_types"`
+}
+
+// NetBirdSync is the state of the NetBird user sync of the web panel.
+type NetBirdSync struct {
+	// Configured is true when a NetBird API token is stored.
+	Configured bool   `json:"configured"`
+	APIURL     string `json:"api_url"`
+	// TokenHint shows the last characters of the stored token.
+	TokenHint string          `json:"token_hint,omitempty"`
+	LastSync  *time.Time      `json:"last_sync,omitempty"`
+	Error     string          `json:"error,omitempty"`
+	Users     int             `json:"users"`
+	Devices   []NetBirdDevice `json:"devices"`
+}
+
+// NetBirdDevice is a NetBird peer that belongs to a NetBird user, with its
+// panel access.
+type NetBirdDevice struct {
+	IP        string `json:"ip"`
+	Name      string `json:"name"`
+	DNSLabel  string `json:"dns_label"`
+	OS        string `json:"os,omitempty"`
+	Connected bool   `json:"connected"`
+	User      string `json:"user"`
+	// Role is the effective panel role; empty means no access.
+	Role string `json:"role,omitempty"`
+	// Source is "user" for a panel user entry of this IP and "netbird"
+	// for a role inherited from another device of the same NetBird user.
+	Source string `json:"source,omitempty"`
+}
+
+// NetBirdSyncRequest stores the NetBird API access. An empty token keeps
+// the stored token.
+type NetBirdSyncRequest struct {
+	APIURL string `json:"api_url,omitempty"`
+	Token  string `json:"token,omitempty"`
 }

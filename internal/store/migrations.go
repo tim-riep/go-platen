@@ -123,6 +123,14 @@ CREATE TABLE panel_users (
 	last_seen   INTEGER
 );
 `,
+	// 3: server settings changed at run time, e.g. the NetBird API token
+	`
+CREATE TABLE settings (
+	key         TEXT PRIMARY KEY,
+	value       TEXT NOT NULL,
+	updated_at  INTEGER NOT NULL
+);
+`,
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {

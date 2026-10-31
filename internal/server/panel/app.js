@@ -436,13 +436,13 @@ function editClient(c, printers) {
 }
 
 async function viewUsers() {
-  const users = (await api("GET", "/users")).items;
+  const [users, sync] = await Promise.all([api("GET", "/users"), api("GET", "/netbird")]);
   return el("div", {},
     head("Panel users", adminButton("Add user", () => editUser(null))),
     el("p", { class: "muted" }, "Users are identified by their NetBird IPv4 address. Access also requires the NetBird peer that first used the address; reset the binding when a device was re-registered in NetBird."),
-    table(["NetBird IP", "Name", "Role", "Peer", "Last visit", ""], users.map(u => el("tr", {},
+    table(["NetBird IP", "Name", "Role", "Peer", "Last visit", ""], users.items.map(u => el("tr", {},
       el("td", { class: "mono" }, u.ip, u.ip === state.me.ip ? el("div", { class: "muted" }, "you") : null),
-      el("td", {}, u.name || ""),
+      el("td", {}, u.name || "", u.netbird_user ? el("div", { class: "muted" }, u.netbird_user) : null),
       el("td", {}, pill(u.role, u.role === "admin" ? "ok" : "neutral")),
       el("td", {}, u.bound ? el("span", { class: "mono" }, u.peer_fqdn || u.peer_id) : pill("bound on first visit", "warn")),
       el("td", {}, fmtTime(u.last_seen)),
@@ -451,7 +451,50 @@ async function viewUsers() {
         u.bound ? adminButton("Reset peer", () => confirmAction("Reset peer binding", "The next visit from " + u.ip + " binds the NetBird peer again.", "Reset",
           () => api("POST", "/users/" + encodeURIComponent(u.ip) + "/reset-peer")), "link") : null,
         adminButton("Remove", () => confirmAction("Remove user", "Remove " + u.ip + " from the panel?", "Remove",
-          () => api("DELETE", "/users/" + encodeURIComponent(u.ip))), "link")))), "No users."));
+          () => api("DELETE", "/users/" + encodeURIComponent(u.ip))), "link")))), "No users."),
+    netbirdSection(sync));
+}
+
+// netbirdSection shows the NetBird user sync: with a NetBird API token, all
+// devices of a NetBird user get the highest role any of them has.
+function netbirdSection(st) {
+  const status = !st.configured ? pill("off", "neutral") : st.error ? pill("error", "bad") : pill("on", "ok");
+  const lines = [];
+  if (st.configured) {
+    lines.push(el("div", {}, "API ", el("span", { class: "mono" }, st.api_url), " · token ", el("span", { class: "mono" }, st.token_hint || "set"),
+      " · last sync ", fmtTime(st.last_sync), " · ", st.users + " NetBird users"));
+    if (st.error) lines.push(el("div", { class: "error" }, st.error));
+  } else {
+    lines.push(el("div", { class: "muted" }, "Enter a NetBird API access token to give every device of a NetBird user the same rights as the user's device listed above, e.g. a phone the rights of the laptop. Use a service user with the smallest role that can read peers and users."));
+  }
+  const devices = st.devices.filter(d => d.role);
+  return el("div", {},
+    el("div", { class: "head", style: "margin-top: 28px" },
+      el("h2", {}, "NetBird user sync ", status),
+      el("div", { class: "toolbar" },
+        adminButton(st.configured ? "Change token" : "Set up", () => editNetBird(st), "secondary"),
+        st.configured ? adminButton("Sync now", async () => { await api("POST", "/netbird/sync"); render(); }, "secondary") : null,
+        st.configured ? adminButton("Remove", () => confirmAction("Remove NetBird sync", "Remove the token? Devices that only inherit their role lose access.", "Remove",
+          () => api("DELETE", "/netbird")), "danger") : null)),
+    el("div", { class: "notice" }, lines),
+    st.configured ? table(["Device", "NetBird user", "NetBird IP", "Access"], devices.map(d => el("tr", {},
+      el("td", {}, d.name, el("div", { class: "muted mono" }, d.dns_label), d.os ? el("div", { class: "muted" }, d.os) : null),
+      el("td", {}, d.user),
+      el("td", { class: "mono" }, d.ip, " ", d.connected ? pill("online", "ok") : pill("offline", "neutral")),
+      el("td", {}, pill(d.role, d.role === "admin" ? "ok" : "neutral"), el("div", { class: "muted" }, d.source === "netbird" ? "via NetBird user" : "panel user")))),
+      "No device of a NetBird user has access yet. Add one of the user's devices above.") : null);
+}
+
+function editNetBird(st) {
+  openDialog("NetBird user sync", [
+    { name: "api_url", label: "NetBird API URL", value: st.api_url, hint: "The management server's URL, without /api." },
+    { name: "token", label: "API access token", type: "password", required: !st.configured,
+      placeholder: st.configured ? "leave empty to keep the stored token" : "nbp_…",
+      hint: "Personal access token of a NetBird service user. It is checked now, stored on the server and never shown again." },
+  ], async v => {
+    await api("PUT", "/netbird", { api_url: v.api_url, token: v.token });
+    render();
+  }, "Save");
 }
 
 function editUser(u) {
@@ -512,7 +555,8 @@ async function start() {
     return;
   }
   const me = document.getElementById("me");
-  me.append(el("strong", {}, state.me.name || state.me.peer_fqdn || state.me.ip), " · ", state.me.role, el("div", { class: "mono" }, state.me.ip + " · platen " + state.me.version));
+  me.append(el("strong", {}, state.me.name || state.me.peer_fqdn || state.me.ip), " · ", state.me.role,
+    state.me.via ? " via " + state.me.via : "", el("div", { class: "mono" }, state.me.ip + " · platen " + state.me.version));
   if (state.me.first_admin) {
     notice("You are the first user of this panel and became its admin. Add further users under Panel users; they are identified by their NetBird IPv4 address.");
   }
