@@ -153,13 +153,22 @@ func TestWindowsService(t *testing.T) {
 	if !ok {
 		t.Fatal("settings page of the service not reachable")
 	}
-	resp, err := http.Get(url + "api/state")
-	if err != nil {
-		t.Fatal(err)
-	}
+	// The printers appear while the service's first sync still runs; wait
+	// until it finished.
 	var state State
-	json.NewDecoder(resp.Body).Decode(&state)
-	resp.Body.Close()
+	for ctx.Err() == nil {
+		resp, err := http.Get(url + "api/state")
+		if err != nil {
+			t.Fatal(err)
+		}
+		state = State{}
+		json.NewDecoder(resp.Body).Decode(&state)
+		resp.Body.Close()
+		if !state.Busy && state.LastSync != nil {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 	if !state.Locked || state.Address != addr || state.Me == nil {
 		t.Fatalf("service state %+v", state)
 	}
