@@ -22,7 +22,8 @@ for arch in amd64 arm64; do
 	# nfpm takes the binary from a fixed path.
 	(cd ../.. && CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
 		-ldflags "-s -w -X main.version=$VERSION" -o desktop/linux/build/stage/platen-desktop ./cmd/platen-desktop)
-	GOARCH=$arch VERSION=$DEBVERSION go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0 \
+	# PKG_ARCH, not GOARCH: go run must build nfpm for this machine.
+	PKG_ARCH=$arch VERSION=$DEBVERSION go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0 \
 		package --config nfpm.yaml --packager deb --target build/
 done
 rm -rf build/stage

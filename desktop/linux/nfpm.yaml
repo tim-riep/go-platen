@@ -1,6 +1,6 @@
 # Package of the Linux desktop client, built by build.sh with nfpm.
 name: platen-desktop
-arch: ${GOARCH}
+arch: ${PKG_ARCH}
 platform: linux
 version: ${VERSION}
 section: utils
