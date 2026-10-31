@@ -276,6 +276,7 @@ func (s *Server) Handler() http.Handler {
 	s.adminRoutes(mux)
 	if s.opts.Panel {
 		s.panelRoutes(mux)
+		s.clientRoutes(mux)
 	}
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

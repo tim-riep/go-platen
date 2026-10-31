@@ -372,3 +372,12 @@ type NetBirdSyncRequest struct {
 	APIURL string `json:"api_url,omitempty"`
 	Token  string `json:"token,omitempty"`
 }
+
+// ClientMe describes the device of a desktop client.
+type ClientMe struct {
+	IP          string `json:"ip"`
+	FQDN        string `json:"fqdn"`
+	NetBirdUser string `json:"netbird_user,omitempty"`
+	PanelRole   string `json:"panel_role,omitempty"`
+	Version     string `json:"version"`
+}

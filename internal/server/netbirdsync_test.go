@@ -175,3 +175,5 @@ func TestNetBirdSyncStaleData(t *testing.T) {
 		t.Fatal("sync error not reported")
 	}
 }
+
+func nbUser(id, name string) netbirdapi.User { return netbirdapi.User{ID: id, Name: name} }

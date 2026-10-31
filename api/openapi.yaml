@@ -12,6 +12,11 @@ info:
       must also come from the NetBird peer the worker was bound to during
       enrollment.
     - Admin API (`/admin/v1`): admin token (`plt_adm_...`).
+    - Client API (`/client/v1`): desktop print clients such as the macOS app.
+      No token: the device is identified by its NetBird peer and may print if
+      it has a panel role or belongs to a NetBird user that is not blocked
+      (see docs/panel.md). Requests must carry the `X-Platen-Client` header
+      and be addressed to the server's NetBird name or IP.
 
     Errors are always JSON: `{"error": {"code": "...", "message": "..."}}`.
   license:
@@ -26,6 +31,7 @@ tags:
   - name: application
   - name: worker
   - name: admin
+  - name: client
 
 paths:
   /v1/health:
@@ -770,6 +776,84 @@ paths:
               schema: { $ref: "#/components/schemas/AdminJob" }
         "409": { $ref: "#/components/responses/Error" }
 
+  /client/v1/me:
+    get:
+      tags: [client]
+      summary: Describe the calling device and its print access
+      parameters: [{ $ref: "#/components/parameters/ClientHeader" }]
+      responses:
+        "200":
+          description: The device
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClientMe" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /client/v1/printers:
+    get:
+      tags: [client]
+      summary: List all printers
+      parameters: [{ $ref: "#/components/parameters/ClientHeader" }]
+      responses:
+        "200":
+          description: Printers with status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [printers]
+                properties:
+                  printers:
+                    type: array
+                    items: { $ref: "#/components/schemas/Printer" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /client/v1/printers/{id}/jobs:
+    post:
+      tags: [client]
+      summary: Print a document from a desktop client
+      description: |
+        Like POST /v1/printers/{id}/jobs. The job records "device:<ip>" as
+        its submitter.
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+        - $ref: "#/components/parameters/ID"
+        - { name: copies, in: query, schema: { type: integer, minimum: 1, maximum: 999, default: 1 } }
+        - { name: title, in: query, schema: { type: string, maxLength: 255 } }
+        - { name: Idempotency-Key, in: header, schema: { type: string, maxLength: 255 } }
+        - { name: Content-Type, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          "*/*":
+            schema: { type: string, format: binary }
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+
+  /client/v1/jobs/{id}:
+    get:
+      tags: [client]
+      summary: Get a job this device submitted
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+        - $ref: "#/components/parameters/ID"
+      responses:
+        "200":
+          description: The job
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     appToken: { type: http, scheme: bearer, description: App client token }
@@ -781,6 +865,12 @@ components:
       name: id
       in: path
       required: true
+      schema: { type: string }
+    ClientHeader:
+      name: X-Platen-Client
+      in: header
+      required: true
+      description: Any non-empty value, e.g. the client name and version.
       schema: { type: string }
 
   responses:
@@ -952,6 +1042,15 @@ components:
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         token: { type: string, description: Only in the response that created or rotated the token }
+    ClientMe:
+      type: object
+      required: [ip, fqdn, version]
+      properties:
+        ip: { type: string }
+        fqdn: { type: string }
+        netbird_user: { type: string, description: NetBird user of the device (with the user sync) }
+        panel_role: { type: string, enum: [admin, viewer], description: Own or inherited panel role }
+        version: { type: string, description: Server version }
     PanelUser:
       type: object
       required: [ip, role, bound, created_at]
