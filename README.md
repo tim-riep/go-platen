@@ -143,6 +143,20 @@ go run honnef.co/go/tools/cmd/staticcheck@latest ./...
 Integration tests run server and worker without NetBird through a loopback
 `mesh.Network` that exists only in test code.
 
+## Releases
+
+Pushing an annotated tag `v<version>` runs the release workflow
+(`.github/workflows/release.yml`): it builds the Linux binaries, the signed
+and notarized macOS installer, the signed Windows installer and the
+container image and creates a GitHub release with these files and
+`SHA256SUMS`. The tag message becomes the release notes. Regular CI never
+signs anything.
+
+```bash
+git tag -a v0.2.0 -m "platen v0.2.0" -m "<release notes>"
+git push origin v0.2.0
+```
+
 ## License
 
 platen is licensed under the [Apache License 2.0](LICENSE). Dependencies and

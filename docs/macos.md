@@ -119,11 +119,13 @@ notary log if it is rejected), staples the ticket and checks it with
 The bundle identifier is `io.github.tim-riep.platen`; set
 `PLATEN_BUNDLE_ID` to use another one.
 
-### CI
+### CI and releases
 
 CI builds and checks the app on every push and keeps the unsigned package
-as an artifact. For version tags (`v*`) it signs and notarizes it, like
-the pdx project, with these repository secrets:
+as an artifact; it never signs anything. A version tag (`v*`) starts the
+release workflow, which signs and notarizes the package, like the pdx
+project, and attaches it to the GitHub release. It uses these repository
+secrets:
 
 | Secret | Content |
 | --- | --- |

@@ -123,9 +123,10 @@ through [ssign](https://github.com/Le-Syl21/ssign) (`cargo install ssign
 `CERTUM_EMAIL` and `CERTUM_OTP` (the TOTP seed of SimplySign, base32) in the
 environment.
 
-CI builds an unsigned installer on every push and a signed one for version
-tags (`v*`). For that, the repository needs the secrets `CERTUM_EMAIL` and
-`CERTUM_OTP`:
+CI builds an unsigned installer on every push; it never signs anything. A
+version tag (`v*`) starts the release workflow, which builds the signed
+installer and attaches it to the GitHub release. For that, the repository
+needs the secrets `CERTUM_EMAIL` and `CERTUM_OTP`:
 
 ```bash
 gh secret set CERTUM_EMAIL --repo tim-riep/go-platen

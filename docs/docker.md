@@ -11,8 +11,8 @@ reachable only inside the NetBird mesh, as without a container.
 
 ## Image
 
-Images are built by CI and published to the GitHub Container Registry for
-version tags:
+Images are built by the release workflow and published to the GitHub
+Container Registry for version tags:
 
 ```
 ghcr.io/tim-riep/go-platen:<version>

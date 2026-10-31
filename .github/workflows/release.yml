@@ -1,0 +1,176 @@
+# Release on a v* tag: check, build the platen binaries for Linux, the
+# signed and notarized macOS installer and the signed Windows installer,
+# publish the container image to ghcr.io and create a GitHub release with
+# all files and checksums. The release notes come from the message of the
+# annotated tag. Only this workflow signs; CI (ci.yml) never does.
+#
+# Secrets: MACOS_CERT_P12, MACOS_CERT_PASSWORD, NOTARY_KEY_P8,
+# NOTARY_KEY_ID, NOTARY_ISSUER_ID (docs/macos.md), CERTUM_EMAIL, CERTUM_OTP
+# (docs/windows.md).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  binaries:
+    needs: check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -eu
+          name="platen-${GITHUB_REF_NAME}-linux-${GOARCH}"
+          mkdir -p "build/$name" dist
+          go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME#v}" -o "build/$name/platen" ./cmd/platen
+          cp LICENSE THIRD_PARTY_LICENSES README.md "build/$name/"
+          tar -C build --owner=0 --group=0 --numeric-owner -czf "dist/$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.goarch }}
+          path: dist/*
+
+  macos:
+    needs: check
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: desktop/macos
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: checks
+        run: swift run PlatenChecks
+      - name: set up signing
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+        run: ./ci-keychain.sh
+      - name: build, sign and notarize
+        env:
+          VERSION: ${{ github.ref_name }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: VERSION=${VERSION#v} ./build.sh
+      - name: remove keychain
+        if: always()
+        run: if [ -n "${MACOS_KEYCHAIN:-}" ]; then security delete-keychain "$MACOS_KEYCHAIN"; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: desktop/macos/build/*.pkg
+
+  windows:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: tools
+        run: sudo apt-get update && sudo apt-get install -y nsis osslsigncode
+      # ssign signs through Certum's SimplySign cloud
+      # (https://github.com/Le-Syl21/ssign), pinned, built once and cached.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/ssign
+          key: ssign-0.1.8-${{ runner.os }}-${{ runner.arch }}
+      - name: ssign
+        run: '[ -x ~/.cargo/bin/ssign ] || cargo install ssign --version 0.1.8 --locked'
+      - name: build and sign
+        env:
+          VERSION: ${{ github.ref_name }}
+          CERTUM_EMAIL: ${{ secrets.CERTUM_EMAIL }}
+          CERTUM_OTP: ${{ secrets.CERTUM_OTP }}
+        run: VERSION=${VERSION#v} desktop/windows/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: desktop/windows/build/*-setup.exe
+
+  image:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ github.ref_name }}
+
+  release:
+    needs: [binaries, macos, windows, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          cd artifacts
+          sha256sum * > SHA256SUMS
+          # The checkout has a lightweight copy of the tag; fetch the annotation.
+          git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME" | sed '/-----BEGIN/,$d' > ../notes.md
+          printf '\n## Container image\n\n```\ndocker pull ghcr.io/%s:%s\n```\n' "$GITHUB_REPOSITORY" "${GITHUB_REF_NAME#v}" >> ../notes.md
+          prerelease=""
+          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" --title "platen ${GITHUB_REF_NAME}" --notes-file ../notes.md $prerelease *
