@@ -13,16 +13,15 @@ import (
 )
 
 // Local printers on Windows. Each platen printer becomes a printer with
-// the "Microsoft Print To PDF" driver on a Standard TCP/IP port in LPR mode
-// that points at the app's receiver (127.0.0.1:515) with the platen
-// printer ID as queue name. The driver renders every document to PDF; the
-// port is named PortPrefix + printer ID, which marks the printers the app
-// manages.
+// the "Microsoft Print To PDF" driver on a local port that is the named
+// pipe \\.\pipe\platen-<printer ID>. The driver renders every document to
+// PDF and the spooler writes it into the pipe, where the app reads it. Pipe
+// names belong to the app alone, so unlike a TCP port nothing else can
+// occupy them; the port name also marks the printers the app manages.
 
 const (
-	PortPrefix  = "platen_"
+	PortPrefix  = `\\.\pipe\platen-`
 	PDFDriver   = "Microsoft Print To PDF"
-	LPDPortWin  = 515
 	nameSuffix  = " (platen)"
 	maxNameRune = 200
 )
@@ -35,8 +34,11 @@ type LocalPrinter struct {
 
 // PrinterID returns the platen printer of a managed printer.
 func (p LocalPrinter) PrinterID() (string, bool) {
-	id, ok := strings.CutPrefix(p.PortName, PortPrefix)
-	return id, ok && id != ""
+	if len(p.PortName) <= len(PortPrefix) || !strings.EqualFold(p.PortName[:len(PortPrefix)], PortPrefix) {
+		return "", false
+	}
+	id := p.PortName[len(PortPrefix):]
+	return id, validPrinterID.MatchString(id)
 }
 
 // PrinterAction is a change to the local printers.
@@ -202,10 +204,10 @@ func ApplyScript(actions []PrinterAction, location string) string {
 		switch a.Kind {
 		case "add":
 			body = fmt.Sprintf(`if (-not (Get-PrinterPort -Name %[1]s -ErrorAction SilentlyContinue)) {
-    Add-PrinterPort -Name %[1]s -LprHostAddress '127.0.0.1' -LprQueueName %[2]s -LprByteCounting
+    Add-PrinterPort -Name %[1]s
   }
-  Add-Printer -Name %[3]s -DriverName %[4]s -PortName %[1]s -Location %[5]s -Comment 'platen'`,
-				port, psQuote(a.PrinterID), psQuote(a.Name), psQuote(PDFDriver), psQuote(location))
+  Add-Printer -Name %[2]s -DriverName %[3]s -PortName %[1]s -Location %[4]s -Comment 'platen'`,
+				port, psQuote(a.Name), psQuote(PDFDriver), psQuote(location))
 			if a.PaperSize != "" {
 				body += fmt.Sprintf("\n  Set-PrintConfiguration -PrinterName %s -PaperSize %s", psQuote(a.Name), a.PaperSize)
 			}

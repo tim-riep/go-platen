@@ -15,7 +15,7 @@ import (
 
 // TestWindowsPrinting installs real printers, prints on one and checks
 // that the job reaches the server as PDF. It changes the computer's
-// printers and needs administrator rights and port 515, so it runs only
+// printers and needs administrator rights, so it runs only
 // with PLATEN_WINDOWS_E2E=1 (CI).
 func TestWindowsPrinting(t *testing.T) {
 	if os.Getenv("PLATEN_WINDOWS_E2E") != "1" {
@@ -70,6 +70,10 @@ func TestWindowsPrinting(t *testing.T) {
 	}
 	if len(jobs) != 1 || jobs[0].QueueID != "lab" || jobs[0].ContentType != "application/pdf" {
 		t.Fatalf("jobs %+v, spool %+v", jobs, app.State().Jobs)
+	}
+	// Out-Printer names its document; the title comes from the spooler.
+	if jobs[0].Title == "" || jobs[0].Title == "Untitled" {
+		t.Errorf("no job title: %+v", jobs[0])
 	}
 	t.Logf("job %q, %d bytes", jobs[0].Title, jobs[0].Size)
 

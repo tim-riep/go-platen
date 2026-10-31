@@ -39,31 +39,31 @@ ZPL) are left out.
 
 ```
 Application ── Windows printer (Microsoft Print To PDF driver)
-             ── Standard TCP/IP port platen_<id>, LPR, queue <id>
-             ── 127.0.0.1:515 ──▶ Platen ── spool ──▶ POST /client/v1/printers/<id>/jobs
+             ── local port \\.\pipe\platen-<id> ──▶ Platen ── spool ──▶ POST /client/v1/printers/<id>/jobs
 ```
 
 - **Printers.** Each platen printer becomes a printer with the built-in
-  "Microsoft Print To PDF" driver on a Standard TCP/IP port named
-  `platen_<printer ID>` in LPR mode (byte counting on) for `127.0.0.1`, queue
-  `<printer ID>`. The driver renders every document to PDF; the port name
-  marks the printers Platen manages. The paper size of the platen printer is
-  the default. The installer turns the "Microsoft Print to PDF" Windows
-  feature on if it is off.
+  "Microsoft Print To PDF" driver on a local port that is the named pipe
+  `\\.\pipe\platen-<printer ID>`. The driver renders every document to
+  PDF and the Windows spooler writes it into the pipe. The port name marks
+  the printers Platen manages. The paper size of the platen printer is the
+  default. The installer turns the "Microsoft Print to PDF" Windows feature
+  on if it is off.
 - **Changes.** Platen uses the PrintManagement PowerShell cmdlets
   (`Add-PrinterPort`, `Add-Printer`, `Rename-Printer`, `Remove-Printer`).
   Without administrator rights it starts itself elevated with the
   `apply-printers` command for the change. The elevated step reads only a
   list of changes, checks that every printer ID, name and paper size is
   valid, and builds the PowerShell script itself.
-- **Receiver.** Platen accepts the jobs with the LPD protocol (RFC 1179) on
-  `127.0.0.1:515`, so only this computer can reach it. The job title and the
-  number of copies come from the control file. While Platen is not running,
-  Windows keeps the jobs in its queue and retries. Only one Platen can
-  listen per computer: with several users signed in at once, the first one's
-  Platen receives the jobs (they are sent as this device either way). If the
-  Windows "LPD Print Service" feature is on, it occupies port 515 and Platen
-  shows an error.
+- **Receiver.** Platen listens on the pipe of every printer it manages.
+  Named pipes do not use network ports, so no other service can be in the
+  way, and their names are Platen's own. Only the spooler (SYSTEM) and the
+  signed-in user may open them; access over the network is refused. The job
+  title is the document name of the job in the printer's Windows queue.
+  While Platen is not running, Windows keeps the jobs in its queue and
+  retries. With several users signed in at once, the first one's Platen
+  receives the jobs (they are sent as this device either way); the other
+  Platen says so on its page.
 - **Spool and server.** Jobs wait in `%LOCALAPPDATA%\Platen\spool` until the
   server accepted them, with the same retries and idempotency keys as on
   macOS (see [macos.md](macos.md#how-it-works)), through the client API
@@ -112,7 +112,7 @@ gh secret set CERTUM_OTP --repo tim-riep/go-platen
 
 ### Tests
 
-`go test ./internal/desktop` covers the LPD receiver, the spool, the printer
+`go test ./internal/desktop` covers the receiving of documents, the spool, the printer
 planning, the generated PowerShell and the whole path from a print job to
 the server. On Windows, `PLATEN_WINDOWS_E2E=1` adds a test that installs
 real printers, prints on one and removes them again; CI runs it on a

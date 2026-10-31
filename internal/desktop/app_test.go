@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -104,23 +103,13 @@ func newServer(t *testing.T) (store.Store, string) {
 	return st, strings.TrimPrefix(hs.URL, "http://")
 }
 
-func lpdPort(t *testing.T) string {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := ln.Addr().String()
-	ln.Close()
-	return addr
-}
-
 func TestAppEndToEnd(t *testing.T) {
 	st, addr := newServer(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	printers := &fakePrinters{list: []LocalPrinter{{Name: "Office", PortName: "USB001"}}}
 	lg := &login{}
-	app := &App{Dir: t.TempDir(), Version: "test", LPDAddr: lpdPort(t), Printers: printers, Login: lg,
+	app := &App{Dir: t.TempDir(), Version: "test", Printers: printers, Login: lg,
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	if err := app.Start(ctx); err != nil {
 		t.Fatal(err)
@@ -151,18 +140,15 @@ func TestAppEndToEnd(t *testing.T) {
 		t.Fatalf("local names %v", names)
 	}
 
-	// Print through the LPD receiver as the Windows spooler does.
+	// A printer delivers a document, as the Windows spooler does through
+	// the printer's pipe.
 	pdf := []byte("%PDF-1.7 test document")
-	c, err := net.Dial("tcp", app.LPDAddr)
-	if err != nil {
+	if err := app.Receive("lab", "Invoice 42", bytes.NewReader(pdf)); err != nil {
 		t.Fatal(err)
 	}
-	c.Write(lpdBytes("lab", "Hpc\nPtim\nJInvoice 42\nldfA001host\n", pdf, len(pdf)))
-	acks := make([]byte, 5)
-	if _, err := io.ReadFull(c, acks); err != nil || !bytes.Equal(acks, make([]byte, 5)) {
-		t.Fatalf("acks %v %v", acks, err)
+	if err := app.Receive("lab", "", bytes.NewReader(nil)); err == nil {
+		t.Fatal("empty document accepted")
 	}
-	c.Close()
 
 	var jobs []store.Job
 	for i := 0; i < 100; i++ {
@@ -210,7 +196,7 @@ func writeTemp(t *testing.T, data []byte) string {
 }
 
 func TestUI(t *testing.T) {
-	app := &App{Dir: t.TempDir(), Version: "test", LPDAddr: lpdPort(t), Printers: &fakePrinters{},
+	app := &App{Dir: t.TempDir(), Version: "test", Printers: &fakePrinters{},
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

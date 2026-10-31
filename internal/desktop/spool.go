@@ -1,11 +1,13 @@
 package desktop
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -193,4 +195,23 @@ func (f *Forwarder) emit(e ForwardEvent) {
 func Backoff(attempts int) time.Duration {
 	d := 5 * time.Second * time.Duration(math.Pow(2, float64(min(max(attempts, 1), 10)-1)))
 	return min(d, 5*time.Minute)
+}
+
+// ContentType returns the MIME type of a document by its first bytes.
+func ContentType(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return "application/octet-stream"
+	}
+	defer f.Close()
+	head := make([]byte, 8)
+	n, _ := io.ReadFull(f, head)
+	head = head[:n]
+	switch {
+	case bytes.HasPrefix(head, []byte("%PDF-")):
+		return "application/pdf"
+	case bytes.HasPrefix(head, []byte("%!")):
+		return "application/postscript"
+	}
+	return "application/octet-stream"
 }

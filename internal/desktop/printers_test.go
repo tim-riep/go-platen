@@ -11,9 +11,9 @@ import (
 
 func TestPlanPrinters(t *testing.T) {
 	installed := []LocalPrinter{
-		{Name: "Office", PortName: "platen_office"},
-		{Name: "Old", PortName: "platen_old"},
-		{Name: "Lab", PortName: "USB001"}, // someone else's printer named Lab
+		{Name: "Office", PortName: PortPrefix + "office"},
+		{Name: "Old", PortName: `\\.\PIPE\Platen-old`}, // ports are case-insensitive
+		{Name: "Lab", PortName: "USB001"},              // someone else's printer named Lab
 		{Name: "Microsoft Print to PDF", PortName: "PORTPROMPT:"},
 	}
 	remote := []api.Printer{
@@ -38,6 +38,9 @@ func TestPlanPrinters(t *testing.T) {
 	all := PlanPrinters(installed, nil)
 	if len(all) != 2 || all[0].Kind != "remove" || all[1].Kind != "remove" {
 		t.Fatalf("remove all %+v", all)
+	}
+	if _, ok := (LocalPrinter{PortName: PortPrefix + "../x"}).PrinterID(); ok {
+		t.Fatal("invalid ID in a port name accepted")
 	}
 	if err := (PrinterChange{Location: "platen on x", Actions: got}).Validate(); err != nil {
 		t.Fatal(err)
@@ -66,9 +69,9 @@ func TestApplyScript(t *testing.T) {
 	}, "platen on server")
 	for _, want := range []string{
 		"Remove-Printer -Name 'Old'",
-		"Remove-PrinterPort -Name 'platen_old'",
-		"Add-PrinterPort -Name 'platen_lab' -LprHostAddress '127.0.0.1' -LprQueueName 'lab' -LprByteCounting",
-		"Add-Printer -Name 'Bob''s printer' -DriverName 'Microsoft Print To PDF' -PortName 'platen_lab' -Location 'platen on server'",
+		`Remove-PrinterPort -Name '\\.\pipe\platen-old'`,
+		`Add-PrinterPort -Name '\\.\pipe\platen-lab'`,
+		`Add-Printer -Name 'Bob''s printer' -DriverName 'Microsoft Print To PDF' -PortName '\\.\pipe\platen-lab' -Location 'platen on server'`,
 		"Set-PrintConfiguration -PrinterName 'Bob''s printer' -PaperSize A4",
 		"Rename-Printer -Name 'Office' -NewName 'Office 2'",
 		"exit 1",

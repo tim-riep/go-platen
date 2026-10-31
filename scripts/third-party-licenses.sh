@@ -31,8 +31,8 @@ HEADER
 		GOOS=windows go-licenses report ./cmd/platen-desktop \
 			--template scripts/third_party_licenses.tpl \
 			--ignore github.com/tim-riep/go-platen 2>/dev/null |
-			awk -v keep="$extra" '
-				BEGIN { n = split(keep, k, "\n"); for (i = 1; i <= n; i++) want[k[i]] = 1 }
+			KEEP=$extra awk '
+				BEGIN { n = split(ENVIRON["KEEP"], k, "\n"); for (i = 1; i <= n; i++) want[k[i]] = 1 }
 				/^================================================================================$/ { if (buf != "" && ok) printf "%s", buf; buf = $0 "\n"; ok = 0; next }
 				buf != "" && buf !~ /\n.*\n/ { split($0, f, " "); ok = (f[1] in want) }
 				{ buf = buf $0 "\n" }

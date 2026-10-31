@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
-	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -22,7 +22,6 @@ import (
 type App struct {
 	Dir      string // data directory (config, spool)
 	Version  string
-	LPDAddr  string // default 127.0.0.1:515
 	Printers PrinterManager
 	Login    LoginItem
 	Log      *slog.Logger
@@ -46,7 +45,19 @@ type App struct {
 	fwd      *Forwarder
 	incoming string
 	kick     chan struct{}
+	recv     receiver
 }
+
+// receiver accepts the print data of the local printers; on Windows each
+// printer writes to its own named pipe.
+type receiver interface {
+	// update listens for exactly the given printers and returns a message
+	// for the user if it cannot listen for some.
+	update(printers []LocalPrinter) string
+}
+
+// MaxDocument is the largest document the app accepts from a printer.
+const MaxDocument = 512 << 20
 
 // PrinterManager changes the local printers.
 type PrinterManager interface {
@@ -77,14 +88,11 @@ type config struct {
 
 func (a *App) configPath() string { return filepath.Join(a.Dir, "config.json") }
 
-// Start opens the spool, starts the LPD receiver and the background loops.
-// It returns when ctx is canceled.
+// Start opens the spool, starts receiving from the local printers and the
+// background loops, which end when ctx is canceled.
 func (a *App) Start(ctx context.Context) error {
 	if a.Log == nil {
 		a.Log = slog.Default()
-	}
-	if a.LPDAddr == "" {
-		a.LPDAddr = fmt.Sprintf("127.0.0.1:%d", LPDPortWin)
 	}
 	if a.SyncInterval == 0 {
 		a.SyncInterval = 5 * time.Minute
@@ -108,13 +116,14 @@ func (a *App) Start(ctx context.Context) error {
 		}
 	}
 
-	ln, err := net.Listen("tcp", a.LPDAddr)
-	if err != nil {
-		a.setReceiverErr(fmt.Sprintf("The print receiver could not listen on %s: %v", a.LPDAddr, err))
-	} else {
-		go a.serveLPD(ctx, ln)
-		go func() { <-ctx.Done(); ln.Close() }()
-	}
+	a.recv = newReceiver(ctx, a)
+	// Receive for the installed printers at once, even while the server
+	// is unreachable.
+	go func() {
+		if ps, err := a.Printers.Installed(ctx); err == nil {
+			a.setReceiverErr(a.recv.update(managedOnly(ps)))
+		}
+	}()
 	go a.loop(ctx)
 	return nil
 }
@@ -148,41 +157,39 @@ func (a *App) kickForwarder() {
 	}
 }
 
-func (a *App) serveLPD(ctx context.Context, ln net.Listener) {
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			if ctx.Err() == nil {
-				a.setReceiverErr("The print receiver stopped: " + err.Error())
-			}
-			return
-		}
-		go a.handleLPD(conn)
-	}
-}
-
-func (a *App) handleLPD(conn net.Conn) {
-	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(10 * time.Minute))
-	jobs, err := ReceiveLPD(conn, a.incoming, LPDLimits{})
+// Receive stores a document a local printer delivered and starts sending
+// it. title is the document name from the print queue.
+func (a *App) Receive(printerID, title string, r io.Reader) error {
+	f, err := os.CreateTemp(a.incoming, "job-*")
 	if err != nil {
-		a.Log.Warn("lpd: receive failed", "err", err)
+		return err
 	}
-	for _, j := range jobs {
-		for _, f := range j.Files {
-			job, err := a.spool.Add(j.Queue, j.Control.Title(), j.Copies, f, time.Now())
-			if err != nil {
-				a.Log.Error("spool: add failed", "err", err)
-				os.Remove(f)
-				continue
-			}
-			a.Log.Info("job received", "printer", job.PrinterID, "title", job.Title, "copies", job.Copies)
-		}
+	n, err := io.Copy(f, io.LimitReader(r, MaxDocument+1))
+	if cerr := f.Close(); err == nil {
+		err = cerr
 	}
-	if len(jobs) > 0 {
-		a.kickForwarder()
-		a.changed()
+	if err == nil && n > MaxDocument {
+		err = fmt.Errorf("the document is larger than %d MB", MaxDocument>>20)
 	}
+	if err == nil && n == 0 {
+		err = errors.New("the document is empty")
+	}
+	if err != nil {
+		os.Remove(f.Name())
+		return err
+	}
+	if title == "" {
+		title = "Untitled"
+	}
+	job, err := a.spool.Add(printerID, title, 1, f.Name(), time.Now())
+	if err != nil {
+		os.Remove(f.Name())
+		return err
+	}
+	a.Log.Info("job received", "printer", job.PrinterID, "title", job.Title, "size", n)
+	a.kickForwarder()
+	a.changed()
+	return nil
 }
 
 func (a *App) forwardEvent(e ForwardEvent) {
@@ -280,6 +287,7 @@ func (a *App) sync(ctx context.Context, address string) (err error) {
 	a.mu.Lock()
 	a.me, a.remote, a.local, a.lastSync = me, remote, managedOnly(installed), time.Now()
 	a.mu.Unlock()
+	a.setReceiverErr(a.recv.update(managedOnly(installed)))
 	a.fwd.SetClient(c)
 	a.kickForwarder()
 	return nil
@@ -329,6 +337,9 @@ func (a *App) RemovePrinters(ctx context.Context) error {
 	a.mu.Lock()
 	a.local = nil
 	a.mu.Unlock()
+	if a.recv != nil {
+		a.setReceiverErr(a.recv.update(nil))
+	}
 	return nil
 }
 
@@ -366,7 +377,15 @@ func (a *App) setBusy(b bool) {
 }
 
 func (a *App) setReceiverErr(msg string) {
-	a.Log.Error(msg)
+	a.mu.Lock()
+	same := a.receiverErr == msg
+	a.mu.Unlock()
+	if same {
+		return
+	}
+	if msg != "" {
+		a.Log.Error(msg)
+	}
 	a.mu.Lock()
 	a.receiverErr = msg
 	a.mu.Unlock()
