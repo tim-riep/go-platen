@@ -31,6 +31,8 @@ function render(st) {
   const connected = !!st.address;
   $("connect-btn").textContent = connected && $("address").value.trim() === st.address ? "Update printers" : "Connect & install printers";
   $("connect-btn").disabled = st.busy;
+  $("address").readOnly = !!st.locked;
+  show("locked", !!st.locked);
 
   const me = $("me");
   me.replaceChildren();
@@ -81,7 +83,7 @@ function render(st) {
 
   show("login-row", st.login !== undefined && st.login !== null);
   $("login").checked = !!st.login;
-  show("disconnect", connected);
+  show("disconnect", connected && !st.locked);
   $("disconnect").disabled = st.busy;
   $("version").textContent = "Platen " + st.version;
 }

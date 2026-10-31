@@ -11,70 +11,92 @@ PDF. It is the Windows counterpart of the [macOS app](macos.md).
 - The computer may print: it is a panel user, or it belongs to a NetBird
   user that is not blocked and the server syncs NetBird users (see
   [macos.md](macos.md#requirements) and [panel.md](panel.md))
-- Administrator rights to install, and to add or remove printers (Windows
-  asks through UAC)
+- Administrator rights only to install. Users need none: the Platen service
+  does everything that needs them.
 
 ## Use
 
-1. Run `Platen-<version>-setup.exe`. It installs to `C:\Program Files\Platen`
-   and can start Platen at the end.
-2. Platen opens its settings page in the browser. Enter the server's NetBird
-   name or IP and choose **Connect & install printers**. Windows asks for
-   administrator permission to add the printers.
-3. The printers appear in every print dialog under their platen names. If a
-   name is already used by another printer, " (platen)" is appended.
-   Platen starts at sign-in from now on (it can be turned off on the page).
+1. An administrator runs `Platen-<version>-setup.exe`. It installs to
+   `C:\Program Files\Platen`, starts the Platen service and can open Platen
+   at the end.
+2. On the settings page in the browser, enter the server's NetBird name or
+   IP and choose **Connect & install printers**. Any signed-in user can do
+   this, unless the administrator locked the server (below).
+3. The printers appear in every print dialog under their platen names, for
+   all users of the computer. If a name is already used by another printer,
+   " (platen)" is appended.
 
-The Platen icon in the notification area shows the connection and waiting
-jobs; its menu opens the settings page, syncs the printers or quits Platen.
-Starting Platen again also opens the page. Platen checks the server every
-five minutes and adds, renames or removes printers; Windows asks for
-permission only when something changes. **Remove printers & disconnect**
-deletes all printers Platen installed.
+The Platen icon in the notification area of every user shows the
+connection and waiting jobs; its menu opens the settings page or syncs the
+printers, and **Hide icon** removes it until the next sign-in (printing goes
+on). The Start menu entry opens the page. The service checks the server
+every five minutes and adds, renames or removes printers. **Remove printers
+& disconnect** deletes all printers Platen installed.
 
 Only printers whose backend takes PDF are installed; `raw` printers (e.g.
 ZPL) are left out.
+
+### Managed rollout
+
+The installer takes options for software distribution (Intune, GPO, …):
+
+```
+Platen-<version>-setup.exe /S /SERVER=printserver.netbird.cloud /LOCK
+```
+
+- `/S` installs silently.
+- `/SERVER=<host>` sets the print server, so the printers appear without
+  anyone opening Platen.
+- `/LOCK` keeps users from changing or removing the server; the page shows
+  it as set by the administrator. Without it, every signed-in user may
+  change the server for the whole computer, which is fine on personal
+  computers but not on shared ones.
+
+`Platen.exe set-server <host> [-lock]`, run as administrator, changes the
+server later.
 
 ## How it works
 
 ```
 Application ── Windows printer (Microsoft Print To PDF driver)
-             ── local port \\.\pipe\platen-<id> ──▶ Platen ── spool ──▶ POST /client/v1/printers/<id>/jobs
+             ── local port \\.\pipe\platen-<id> ──▶ Platen service ── spool ──▶ POST /client/v1/printers/<id>/jobs
+                                                         ▲
+                     tray icon / settings page (users) ──┘
 ```
 
+- **Service.** The Platen service (`Platen.exe service`, LocalSystem,
+  automatic start, restarted after failures) runs for all users. It
+  manages the printers, receives and spools the jobs, talks to the server
+  and serves the settings page. Its data (configuration, spool, log) is in
+  `%ProgramData%\Platen`, which only SYSTEM and administrators may open,
+  since the spool holds every user's documents.
 - **Printers.** Each platen printer becomes a printer with the built-in
   "Microsoft Print To PDF" driver on a local port that is the named pipe
   `\\.\pipe\platen-<printer ID>`. The driver renders every document to
   PDF and the Windows spooler writes it into the pipe. The port name marks
   the printers Platen manages. The paper size of the platen printer is the
-  default. The installer turns the "Microsoft Print to PDF" Windows feature
-  on if it is off.
-- **Changes.** Platen uses the PrintManagement PowerShell cmdlets
-  (`Add-PrinterPort`, `Add-Printer`, `Rename-Printer`, `Remove-Printer`).
-  Without administrator rights it starts itself elevated with the
-  `apply-printers` command for the change. The elevated step reads only a
-  list of changes, checks that every printer ID, name and paper size is
-  valid, and builds the PowerShell script itself.
-- **Receiver.** Platen listens on the pipe of every printer it manages.
-  Named pipes do not use network ports, so no other service can be in the
-  way, and their names are Platen's own. Only the spooler (SYSTEM) and the
-  signed-in user may open them; access over the network is refused. The job
-  title is the document name of the job in the printer's Windows queue.
-  While Platen is not running, Windows keeps the jobs in its queue and
-  retries. With several users signed in at once, the first one's Platen
-  receives the jobs (they are sent as this device either way); the other
-  Platen says so on its page.
-- **Spool and server.** Jobs wait in `%LOCALAPPDATA%\Platen\spool` until the
-  server accepted them, with the same retries and idempotency keys as on
-  macOS (see [macos.md](macos.md#how-it-works)), through the client API
-  (`/client/v1`).
-- **Settings page.** It is served on a random port of `127.0.0.1` under a
-  random path that only the signed-in user can read (in
-  `%LOCALAPPDATA%\Platen\ui.json`). Changing requests need the
-  `X-Platen-Desktop` header and the exact host, which keeps other web pages
-  out.
+  default. The service uses the PrintManagement PowerShell cmdlets
+  (`Add-PrinterPort`, `Add-Printer`, `Rename-Printer`, `Remove-Printer`) and
+  checks every printer ID, name and paper size from the server before. The
+  installer turns the "Microsoft Print to PDF" Windows feature on if it is
+  off.
+- **Receiver.** The service listens on the pipe of every printer it
+  manages. Named pipes do not use network ports, so no other service can be
+  in the way, and their names are Platen's own. Only the spooler, the
+  signed-in users and administrators may open them; access over the
+  network is refused. The job title is the document name of the job in the
+  printer's Windows queue. If the service is stopped, Windows keeps the jobs
+  in its queue and retries.
+- **Spool and server.** Jobs wait in the spool until the server accepted
+  them, with the same retries and idempotency keys as on macOS (see
+  [macos.md](macos.md#how-it-works)), through the client API (`/client/v1`).
+- **Settings page.** The service serves it on a random port of `127.0.0.1`
+  under a random path. The path is in `%ProgramData%\Platen\public\ui.json`,
+  which signed-in users may read; the tray icon opens the page from there.
+  Changing requests need the `X-Platen-Desktop` header and the exact host,
+  which keeps web pages out.
 
-The log is `%LOCALAPPDATA%\Platen\platen.log`.
+The log is `%ProgramData%\Platen\platen.log`.
 
 ## Building
 
@@ -114,13 +136,14 @@ gh secret set CERTUM_OTP --repo tim-riep/go-platen
 
 `go test ./internal/desktop` covers the receiving of documents, the spool, the printer
 planning, the generated PowerShell and the whole path from a print job to
-the server. On Windows, `PLATEN_WINDOWS_E2E=1` adds a test that installs
-real printers, prints on one and removes them again; CI runs it on a
-Windows runner. It changes the computer's printers and needs administrator
-rights.
+the server. On Windows, `PLATEN_WINDOWS_E2E=1` adds two tests: one installs
+real printers, prints on one and removes them; the other installs the
+service with a preset, locked server, waits until it installed the
+printers, prints and uninstalls it. CI runs them on a Windows runner. They
+change the computer's printers and services and need administrator rights.
 
 ## Uninstall
 
-Uninstall Platen in Settings → Apps. The uninstaller removes all printers
-Platen installed and the sign-in entry of the user who uninstalls; the data
-in `%LOCALAPPDATA%\Platen` stays.
+Uninstall Platen in Settings → Apps (administrator). The uninstaller stops
+and removes the service, removes all printers Platen installed and deletes
+`%ProgramData%\Platen`, including jobs that were not sent yet.

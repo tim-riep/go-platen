@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -178,6 +179,23 @@ func TestAppEndToEnd(t *testing.T) {
 		t.Fatalf("failed job %+v", js)
 	}
 
+	// A locked server cannot be changed or removed.
+	app.mu.Lock()
+	app.cfg.Locked = true
+	app.mu.Unlock()
+	if err := app.Connect(ctx, "other.example"); !errors.Is(err, ErrLocked) {
+		t.Fatalf("locked connect: %v", err)
+	}
+	if err := app.Disconnect(ctx); !errors.Is(err, ErrLocked) {
+		t.Fatalf("locked disconnect: %v", err)
+	}
+	if err := app.Connect(ctx, addr); err != nil {
+		t.Fatalf("locked resync: %v", err)
+	}
+	app.mu.Lock()
+	app.cfg.Locked = false
+	app.mu.Unlock()
+
 	// Disconnecting removes only the app's printers.
 	if err := app.Disconnect(ctx); err != nil {
 		t.Fatal(err)
@@ -203,11 +221,12 @@ func TestUI(t *testing.T) {
 	if err := app.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
-	ui, err := StartUI(ctx, app)
+	info := filepath.Join(app.Dir, "ui.json")
+	ui, err := StartUI(ctx, app, info)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if url, ok := RunningUI(app.Dir); !ok || url != ui.URL {
+	if url, ok := RunningUI(info); !ok || url != ui.URL {
 		t.Fatalf("running UI %q %v", url, ok)
 	}
 	get := func(url string) int {
@@ -254,7 +273,7 @@ func TestUI(t *testing.T) {
 	}
 	cancel()
 	time.Sleep(50 * time.Millisecond)
-	if _, ok := RunningUI(app.Dir); ok {
+	if _, ok := RunningUI(info); ok {
 		t.Fatal("UI still registered")
 	}
 }

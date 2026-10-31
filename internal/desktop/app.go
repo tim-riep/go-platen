@@ -31,7 +31,7 @@ type App struct {
 	OnChange func()
 
 	mu          sync.Mutex
-	cfg         config
+	cfg         Config
 	me          *api.ClientMe
 	remote      []api.Printer
 	local       []LocalPrinter
@@ -82,11 +82,34 @@ func (SystemPrinters) Apply(ctx context.Context, actions []PrinterAction, locati
 	return ApplyPrinters(ctx, actions, location)
 }
 
-type config struct {
+// Config is stored as config.json in the data directory.
+type Config struct {
 	Address string `json:"address"`
+	// Locked keeps users from changing the address; set by an administrator
+	// (Windows installer option /LOCK).
+	Locked bool `json:"locked,omitempty"`
 }
 
-func (a *App) configPath() string { return filepath.Join(a.Dir, "config.json") }
+// ErrLocked is returned when users may not change the server.
+var ErrLocked = errors.New("the print server was set by your administrator and cannot be changed")
+
+func (a *App) configPath() string { return ConfigPath(a.Dir) }
+
+// ConfigPath returns the configuration file of the data directory dir.
+func ConfigPath(dir string) string { return filepath.Join(dir, "config.json") }
+
+// WriteConfig stores cfg in the data directory dir.
+func WriteConfig(dir string, cfg Config) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	data, _ := json.MarshalIndent(cfg, "", "  ")
+	tmp := ConfigPath(dir) + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, ConfigPath(dir))
+}
 
 // Start opens the spool, starts receiving from the local printers and the
 // background loops, which end when ctx is canceled.
@@ -209,6 +232,12 @@ func (a *App) Connect(ctx context.Context, address string) error {
 	if _, err := ServerURL(address); err != nil {
 		return err
 	}
+	a.mu.Lock()
+	locked := a.cfg.Locked && a.cfg.Address != address
+	a.mu.Unlock()
+	if locked {
+		return ErrLocked
+	}
 	first := a.Address() == ""
 	if err := a.sync(ctx, address); err != nil {
 		return err
@@ -305,6 +334,12 @@ func managedOnly(ps []LocalPrinter) []LocalPrinter {
 
 // Disconnect removes the app's printers and forgets the server.
 func (a *App) Disconnect(ctx context.Context) error {
+	a.mu.Lock()
+	locked := a.cfg.Locked
+	a.mu.Unlock()
+	if locked {
+		return ErrLocked
+	}
 	if err := a.RemovePrinters(ctx); err != nil {
 		a.mu.Lock()
 		a.lastErr = Describe(err)
@@ -343,13 +378,7 @@ func (a *App) RemovePrinters(ctx context.Context) error {
 	return nil
 }
 
-func (a *App) saveConfig(cfg config) error {
-	if err := os.MkdirAll(a.Dir, 0o700); err != nil {
-		return err
-	}
-	data, _ := json.MarshalIndent(cfg, "", "  ")
-	return os.WriteFile(a.configPath(), data, 0o600)
-}
+func (a *App) saveConfig(cfg Config) error { return WriteConfig(a.Dir, cfg) }
 
 // RetryNow sends all waiting jobs now.
 func (a *App) RetryNow() {
@@ -409,6 +438,7 @@ type State struct {
 	Error         string         `json:"error,omitempty"`
 	ReceiverError string         `json:"receiver_error,omitempty"`
 	Busy          bool           `json:"busy"`
+	Locked        bool           `json:"locked,omitempty"`
 	Login         *bool          `json:"login,omitempty"`
 	Waiting       int            `json:"waiting"`
 	FailedJobs    int            `json:"failed_jobs"`
@@ -424,7 +454,7 @@ type PrinterState struct {
 func (a *App) State() State {
 	a.mu.Lock()
 	st := State{Version: a.Version, Address: a.cfg.Address, Me: a.me, Error: a.lastErr, ReceiverError: a.receiverErr,
-		Busy: a.busy, Printers: []PrinterState{}}
+		Busy: a.busy, Locked: a.cfg.Locked, Printers: []PrinterState{}}
 	if !a.lastSync.IsZero() {
 		t := a.lastSync
 		st.LastSync = &t

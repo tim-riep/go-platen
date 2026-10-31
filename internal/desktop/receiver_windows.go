@@ -2,7 +2,6 @@ package desktop
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -37,15 +36,10 @@ func newReceiver(ctx context.Context, a *App) receiver {
 	return r
 }
 
-// pipeSecurity allows the spooler (SYSTEM) and this user to write, and
+// pipeSecurity lets the spooler (SYSTEM), administrators and the signed-in
+// users (the spooler may open the port as the printing user) write, and
 // refuses access over the network.
-func pipeSecurity() (string, error) {
-	u, err := windows.GetCurrentProcessToken().GetTokenUser()
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("D:P(D;;GA;;;NU)(A;;GA;;;SY)(A;;GA;;;%s)", u.User.Sid.String()), nil
-}
+const pipeSecurity = "D:P(D;;GA;;;NU)(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;AU)"
 
 func (r *pipeReceiver) update(printers []LocalPrinter) string {
 	r.mu.Lock()
@@ -71,16 +65,12 @@ func (r *pipeReceiver) update(printers []LocalPrinter) string {
 			p.name = lp.Name
 			continue
 		}
-		sd, err := pipeSecurity()
+		ln, err := winio.ListenPipe(PortPrefix+id, &winio.PipeConfig{SecurityDescriptor: pipeSecurity, InputBufferSize: 64 << 10})
 		if err == nil {
-			var ln net.Listener
-			ln, err = winio.ListenPipe(PortPrefix+id, &winio.PipeConfig{SecurityDescriptor: sd, InputBufferSize: 64 << 10})
-			if err == nil {
-				p := &pipe{ln: ln, name: lp.Name}
-				r.pipes[id] = p
-				go r.serve(id, p)
-				continue
-			}
+			p := &pipe{ln: ln, name: lp.Name}
+			r.pipes[id] = p
+			go r.serve(id, p)
+			continue
 		}
 		r.app.Log.Error("receiver: listen", "pipe", PortPrefix+id, "err", err)
 		failed = append(failed, lp.Name)
@@ -88,9 +78,8 @@ func (r *pipeReceiver) update(printers []LocalPrinter) string {
 	if len(failed) == 0 {
 		return ""
 	}
-	// Usually Platen runs a second time, e.g. for another signed-in user.
 	return "Platen cannot receive jobs for " + strings.Join(failed, ", ") +
-		" because another program, probably Platen of another user, receives them."
+		" because another program uses their pipes. Is Platen running twice?"
 }
 
 func (r *pipeReceiver) serve(id string, p *pipe) {

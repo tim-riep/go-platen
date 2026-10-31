@@ -144,7 +144,7 @@ func windowsPaperSize(s string) string {
 	return ""
 }
 
-// PrinterChange is the input of the elevated "apply-printers" step.
+// PrinterChange is a set of printer actions.
 type PrinterChange struct {
 	Location string          `json:"location"`
 	Actions  []PrinterAction `json:"actions"`
@@ -152,8 +152,8 @@ type PrinterChange struct {
 
 var validPrinterID = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
-// Validate checks a change that comes from a file, so that the elevated
-// step can only change the app's own printers.
+// Validate checks a change before it runs with administrator rights, so
+// that data from the server can only change the app's own printers.
 func (c PrinterChange) Validate() error {
 	if c.Location != PrinterName(c.Location) {
 		return fmt.Errorf("invalid location %q", c.Location)

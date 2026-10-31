@@ -91,9 +91,11 @@ NetBird user. Installer, signing and notarization: [docs/macos.md](docs/macos.md
 
 ## Windows app
 
-The Windows client does the same with a notification area icon and a
-settings page in the browser: every platen printer becomes a Windows
-printer that sends PDF to the server. See [docs/windows.md](docs/windows.md).
+The Windows client does the same with a Windows service, so users need no
+administrator rights, plus a notification area icon and a settings page in
+the browser: every platen printer becomes a Windows printer that sends PDF
+to the server. The installer can preset and lock the server for managed
+rollouts. See [docs/windows.md](docs/windows.md).
 
 ## Container image
 

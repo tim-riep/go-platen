@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -34,18 +33,16 @@ type UI struct {
 	prefix string
 }
 
-// UIInfo is stored in the data directory so that a second start of the app
-// can open the page of the running one.
+// UIInfo is stored in a file so that the tray icon, or a second start of
+// the app, can open the page of the running one.
 type UIInfo struct {
 	URL string `json:"url"`
 	PID int    `json:"pid"`
 }
 
-func uiInfoPath(dir string) string { return filepath.Join(dir, "ui.json") }
-
-// RunningUI returns the page of an app that already runs for this user.
-func RunningUI(dir string) (string, bool) {
-	data, err := os.ReadFile(uiInfoPath(dir))
+// RunningUI returns the page of a running app from its info file.
+func RunningUI(infoPath string) (string, bool) {
+	data, err := os.ReadFile(infoPath)
 	if err != nil {
 		return "", false
 	}
@@ -64,8 +61,8 @@ func RunningUI(dir string) (string, bool) {
 }
 
 // StartUI listens on a random loopback port and serves the page until ctx
-// is canceled.
-func StartUI(ctx context.Context, app *App) (*UI, error) {
+// is canceled. Whoever can read infoPath can open the page.
+func StartUI(ctx context.Context, app *App, infoPath string) (*UI, error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
@@ -79,10 +76,10 @@ func StartUI(ctx context.Context, app *App) (*UI, error) {
 	go func() {
 		<-ctx.Done()
 		srv.Close()
-		os.Remove(uiInfoPath(app.Dir))
+		os.Remove(infoPath)
 	}()
 	data, _ := json.Marshal(UIInfo{URL: u.URL, PID: os.Getpid()})
-	if err := os.WriteFile(uiInfoPath(app.Dir), data, 0o600); err != nil {
+	if err := os.WriteFile(infoPath, data, 0o644); err != nil {
 		app.Log.Warn("ui: store address", "err", err)
 	}
 	return u, nil
