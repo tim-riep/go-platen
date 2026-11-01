@@ -59,8 +59,8 @@ in userspace mode (no root, no TUN device):
 - Workers and the admin CLI use `client.NewHTTPClient()` to reach the server
   by its NetBird DNS name. They set `BlockInbound`, so they accept no
   connections from the mesh, and open no local port.
-- Workers reach printers through the regular local network (`net.Dial`, TCP
-  port 9100), not through NetBird.
+- Workers reach printers through the regular local network (`net.Dial`, raw
+  TCP port 9100, or IPP on port 631), not through NetBird.
 
 NetBird itself uses UDP sockets on the host for the WireGuard tunnel and for
 connectivity checks; these belong to the mesh transport, not to platen's
@@ -163,6 +163,32 @@ backends and to reject documents a printer's backend cannot print.
 | `raw` | anything | the document unchanged, repeated per copy (e.g. ZPL) |
 | `pdf-to-raster` | `application/pdf` | 1-bit bitmaps as PBM (P4) pages |
 | `brother-raster` | `application/pdf` | Brother HL-2135W print data (A4 at 300/600/1200 dpi, Letter and A5 at 600 dpi), see [brother-raster-format.md](brother-raster-format.md) |
+| `ipp` | `application/pdf` | an IPP Print-Job request with the PDF as it is, or PWG Raster (PWG 5102.4) rendered in sRGB or sGray |
+
+### IPP
+
+Driverless printers (IPP Everywhere, AirPrint) need no printer language of
+their own: they take PDF or PWG Raster over IPP (RFC 8010/8011, HTTP on port
+631). The `ipp` backend implements the optional `backend.Deliverer`
+interface, so the worker hands the rendered request to the backend instead
+of its raw TCP connection; journal, retries and the uncertain state work as
+for raw printers.
+
+1. `Print` asks the printer for its capabilities (Get-Printer-Attributes,
+   cached for five minutes) and writes a complete Print-Job request: the
+   IPP message followed by the PDF unchanged, if the printer accepts PDF and
+   can make the copies, otherwise the pages rendered to PWG Raster at the
+   supported resolution closest to the printer's `resolution_dpi` (not
+   above it), in color if the printer accepts sRGB.
+2. `Deliver` posts the request. A refusal (e.g. `server-error-busy`) is
+   retryable and nothing was printed; an error while sending is uncertain
+   once data was sent, as for raw TCP. Then it polls Get-Job-Attributes
+   until the job is completed (done), aborted or canceled (failed,
+   uncertain), at most for the `wait` option (10 minutes); a job the printer
+   accepted that is still waiting then, e.g. for paper, counts as printed.
+
+The heartbeat probes the IPP port. IPP, PWG Raster and the encoder are
+implemented from the public specifications (`internal/ipp`, `internal/pwg`).
 
 Raster backends share the PDF renderer and differ only in their
 `raster.Encoder`. A printer language that prints bitmaps (e.g. a Brother

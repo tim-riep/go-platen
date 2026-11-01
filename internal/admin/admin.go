@@ -88,6 +88,8 @@ Printers:
   printer list [-worker W]
   printer get <id>
   printer create <id> -worker W -address HOST[:PORT] -backend B
+                                          port 9100 if omitted, 631 for -backend ipp;
+                                          ipp also takes ipp:// or ipps:// URIs
                  [-name N] [-paper A4] [-dpi 600] [-status ready|paused]
                  [-option key=value ...]
   printer update <id> [same flags as create]

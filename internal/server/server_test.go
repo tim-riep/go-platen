@@ -92,7 +92,7 @@ func newEnv(t *testing.T, mod ...func(*Options)) *env {
 			switch b {
 			case "raw":
 				return []string{"*/*"}, true
-			case "pdf":
+			case "pdf", "ipp":
 				return []string{"application/pdf"}, true
 			}
 			return nil, false
@@ -503,6 +503,17 @@ func TestAdminCRUD(t *testing.T) {
 		t.Fatalf("patched printer: %+v", p)
 	}
 	e.expect(e.do("DELETE", "/admin/v1/printers/lp", e.admin, nil), 204)
+
+	// IPP printers listen on 631; URIs are kept.
+	e.expect(e.do("POST", "/admin/v1/printers", e.admin, map[string]any{"id": "ink", "worker_id": "local", "address": "10.1.1.2", "backend": "ipp"}), 201).decode(t, &p)
+	if p.Address != "10.1.1.2:631" {
+		t.Fatalf("ipp address %q", p.Address)
+	}
+	e.expect(e.do("PATCH", "/admin/v1/printers/ink", e.admin, map[string]any{"address": "ipps://canon.local/ipp/print"}), 200).decode(t, &p)
+	if p.Address != "ipps://canon.local/ipp/print" {
+		t.Fatalf("ipp uri %q", p.Address)
+	}
+	e.expect(e.do("DELETE", "/admin/v1/printers/ink", e.admin, nil), 204)
 	e.expect(e.do("GET", "/admin/v1/printers/lp", e.admin, nil), 404)
 
 	var workers api.List[api.Worker]

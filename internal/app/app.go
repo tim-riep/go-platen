@@ -17,6 +17,7 @@ import (
 
 	"github.com/tim-riep/go-platen/internal/api"
 	"github.com/tim-riep/go-platen/internal/backend"
+	"github.com/tim-riep/go-platen/internal/backend/ipp"
 	"github.com/tim-riep/go-platen/internal/backend/raster"
 	"github.com/tim-riep/go-platen/internal/backend/raw"
 	"github.com/tim-riep/go-platen/internal/brother"
@@ -34,7 +35,7 @@ const EnvEnrollmentToken = "PLATEN_ENROLLMENT_TOKEN"
 
 // Backends returns the registry with all backends compiled into platen.
 func Backends() *backend.Registry {
-	return backend.NewRegistry(raw.Factory, raster.PDFToRaster, brother.Factory)
+	return backend.NewRegistry(raw.Factory, raster.PDFToRaster, brother.Factory, ipp.Factory)
 }
 
 type peerResolver struct{ n mesh.Network }

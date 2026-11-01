@@ -274,12 +274,12 @@ async function editPrinter(p, workers) {
     { name: "id", label: "ID", value: p.id, required: isNew, readonly: !isNew, hint: isNew ? "Lower case letters, digits, - and _; used in the API." : "" },
     { name: "name", label: "Name", value: p.name },
     { name: "worker_id", label: "Worker", type: "select", value: p.worker_id, options: workers.map(w => [w.id, w.name + " (" + w.id + ")"]) },
-    { name: "address", label: "Address", value: p.address, required: true, placeholder: "192.168.1.20 or host:9100", hint: "In the worker's local network; port 9100 if omitted." },
+    { name: "address", label: "Address", value: p.address, required: true, placeholder: "192.168.1.20 or host:9100", hint: "In the worker's local network; port 9100 if omitted, 631 for ipp. ipp also takes ipp:// or ipps:// URIs." },
     { name: "backend", label: "Backend", type: "select", value: p.backend, options: backends },
     { name: "paper_size", label: "Paper", type: "select", value: p.paper_size, options: ["A4", "A5", "A6", "Letter", "Legal"] },
     { name: "resolution_dpi", label: "Resolution", type: "select", value: p.resolution_dpi, options: [[300, "300 dpi"], [600, "600 dpi"], [1200, "1200 dpi"]] },
     { name: "status", label: "Status", type: "select", value: p.status, options: [["ready", "Ready"], ["paused", "Paused"]] },
-    { name: "options", label: "Options", type: "textarea", value: optionsText(p.options), placeholder: "dither=halftone", hint: "One key=value per line, e.g. dither, source, media, toner_save." },
+    { name: "options", label: "Options", type: "textarea", value: optionsText(p.options), placeholder: "dither=halftone", hint: "One key=value per line, e.g. dither, source, media, toner_save; for ipp format, color, sides, quality." },
   ], async v => {
     const body = { name: v.name || v.id, worker_id: v.worker_id, address: v.address, backend: v.backend, paper_size: v.paper_size,
       resolution_dpi: Number(v.resolution_dpi), status: v.status, options: parseOptions(v.options) };
@@ -299,7 +299,7 @@ function printFile(printer, printers) {
   }
   fields.push(
     { name: "file", label: "File", type: "file", required: true,
-      hint: "PDF for pdf-to-raster and brother-raster printers; raw printers receive the file unchanged (e.g. ZPL)." },
+      hint: "PDF for pdf-to-raster, brother-raster and ipp printers; raw printers receive the file unchanged (e.g. ZPL)." },
     { name: "copies", label: "Copies", type: "number", value: 1, min: 1, max: 999 },
     { name: "title", label: "Title", placeholder: "defaults to the file name" });
   openDialog(printer ? "Print on " + printer.name : "Print a file", fields, async v => {

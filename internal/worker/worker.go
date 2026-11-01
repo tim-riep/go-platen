@@ -342,6 +342,7 @@ func (w *Worker) process(ctx context.Context, l *api.Lease) {
 	opts := backend.JobOptions{
 		JobID: job.ID, Title: job.Title, ContentType: job.ContentType, Copies: job.Copies,
 		PaperSize: p.PaperSize, ResolutionDPI: p.ResolutionDPI, Options: p.Options,
+		Address: p.Address, Dialer: w.opts.Dialer,
 	}
 	start := time.Now()
 	if err := b.Print(ctx, doc, opts, out); err != nil {
@@ -368,14 +369,22 @@ func (w *Worker) process(ctx context.Context, l *api.Lease) {
 		fail(true, fmt.Errorf("write journal: %w", err))
 		return
 	}
-	n, err := printer.Send(ctx, w.opts.Dialer, p.Address, out, w.opts.Printer)
+	var n int64
+	if d, ok := b.(backend.Deliverer); ok {
+		err, n = d.Deliver(ctx, out, size, opts), size
+	} else {
+		n, err = printer.Send(ctx, w.opts.Dialer, p.Address, out, w.opts.Printer)
+	}
 	stopKeep()
+	var refused *printer.RefusedError
 	switch {
 	case err == nil:
 		log.Info("job printed", "bytes", n, "took", time.Since(start))
 		w.record(Entry{JobID: job.ID, PrinterID: p.ID, State: StatePrinted})
 	case printer.IsSafeToRetry(err):
 		fail(true, err)
+	case errors.As(err, &refused):
+		fail(refused.Retryable, err)
 	default:
 		log.Error("sending interrupted, the printer may have printed part of the job", "err", err)
 		w.record(Entry{JobID: job.ID, PrinterID: p.ID, State: StateFailed, Error: err.Error(), Uncertain: true})
@@ -553,8 +562,16 @@ func (w *Worker) heartbeat(ctx context.Context) {
 			// currently sending to.
 			continue
 		}
+		probe := printer.Probe
+		if b, err := w.opts.Backends.Get(p.Backend); err == nil {
+			if d, ok := b.(backend.Deliverer); ok {
+				probe = func(ctx context.Context, dl printer.Dialer, addr string, timeout time.Duration) error {
+					return d.Probe(ctx, dl, addr, timeout)
+				}
+			}
+		}
 		wg.Go(func() {
-			if err := printer.Probe(ctx, w.opts.Dialer, p.Address, w.opts.ProbeTimeout); err != nil {
+			if err := probe(ctx, w.opts.Dialer, p.Address, w.opts.ProbeTimeout); err != nil {
 				reports[i] = api.Reachability{PrinterID: p.ID, Reachable: false, Error: err.Error()}
 			}
 		})

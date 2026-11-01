@@ -53,6 +53,10 @@ var (
 	rendererErr  error
 )
 
+// SharedRenderer returns the PDF renderer shared by all backends that
+// render PDFs.
+func SharedRenderer() (*render.PDFRenderer, error) { return sharedRenderer() }
+
 func sharedRenderer() (*render.PDFRenderer, error) {
 	rendererOnce.Do(func() { rendererInst, rendererErr = render.NewPDFRenderer() })
 	return rendererInst, rendererErr

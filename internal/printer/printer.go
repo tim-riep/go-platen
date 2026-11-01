@@ -58,6 +58,18 @@ func (e *SendError) Error() string {
 
 func (e *SendError) Unwrap() error { return e.Err }
 
+// RefusedError means the printer answered but refused the job, so nothing
+// was printed. Retryable tells whether trying again later may succeed,
+// e.g. when the printer is busy.
+type RefusedError struct {
+	Retryable bool
+	Err       error
+}
+
+func (e *RefusedError) Error() string { return fmt.Sprintf("printer refused the job: %v", e.Err) }
+
+func (e *RefusedError) Unwrap() error { return e.Err }
+
 // Send connects to addr and writes r to the printer.
 func Send(ctx context.Context, d Dialer, addr string, r io.Reader, o Options) (int64, error) {
 	o.defaults()

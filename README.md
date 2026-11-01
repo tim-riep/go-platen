@@ -23,8 +23,9 @@ interface, and workers accept no inbound connections at all.
   worker and idempotency keys for applications
 - Backends: `raw` (e.g. ZPL), `pdf-to-raster` (PDFium in WebAssembly,
   threshold, halftone or error diffusion) and `brother-raster` (Brother
-  HL-2135W: A4 at 300, 600 and 1200 dpi, Letter and A5 at 600 dpi), designed
-  for more printer languages
+  HL-2135W: A4 at 300, 600 and 1200 dpi, Letter and A5 at 600 dpi) over raw
+  TCP, and `ipp` for driverless printers (IPP Everywhere, AirPrint: PDF as it
+  is, or PWG Raster in color or gray); designed for more printer languages
 - SQLite store (pure Go) behind an interface, documents in a spool directory
 
 ## Architecture

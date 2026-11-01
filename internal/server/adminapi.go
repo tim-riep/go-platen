@@ -272,7 +272,12 @@ func (s *Server) applyPrinter(p *store.Printer, req *api.PrinterRequest) error {
 		return errBadRequest("status must be %q or %q", store.PrinterReady, store.PrinterPaused)
 	}
 	if !strings.Contains(p.Address, ":") {
-		p.Address += ":9100"
+		// Raw TCP printers listen on 9100, IPP printers on 631.
+		if p.Backend == "ipp" {
+			p.Address += ":631"
+		} else {
+			p.Address += ":9100"
+		}
 	}
 	if s.opts.Backends != nil {
 		if _, ok := s.opts.Backends(p.Backend); !ok {

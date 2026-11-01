@@ -93,6 +93,9 @@ platen admin -config admin.toml printer create zebra-1 -worker site-hamburg -add
 platen admin -config admin.toml printer create office-1 -worker site-hamburg -address 192.168.10.21 \
     -backend pdf-to-raster -paper A4 -dpi 600 -option dither=threshold
 
+# A driverless inkjet (IPP Everywhere, AirPrint), port 631 if omitted
+platen admin -config admin.toml printer create inkjet-1 -worker site-hamburg -address 192.168.10.22 -backend ipp -dpi 300
+
 # A printer at the server, served by the built-in worker
 platen admin -config admin.toml printer create front-desk -worker local -address 10.0.0.30 -backend raw
 
@@ -142,6 +145,24 @@ Set with `-option key=value` on `printer create`/`update`:
 | `brother-raster` | `source` | `tray` (default), `auto`, `manual` (manual feed slot) |
 | | `media` | `plain` (default), `thick` |
 | | `toner_save` | `off` (default), `on` |
+
+| `ipp` | `format` | `auto` (default: PDF if the printer accepts it, else PWG Raster), `pdf`, `pwg-raster` |
+| | `color` | `auto` (default: the printer's default for PDF, color raster if supported), `color`, `monochrome` |
+| | `sides` | `one-sided`, `two-sided-long-edge`, `two-sided-short-edge`; default: the printer's default |
+| | `quality` | `draft`, `normal`, `high`; default: the printer's default |
+| | `rotate` | `auto` (default), `none`; for PWG Raster |
+| | `path` | the printer's IPP resource, default `/ipp/print` |
+| | `wait` | how long to wait for the job to complete, e.g. `10m` (default), `0` to stop once the printer accepted it |
+| | `insecure-tls` | `true` accepts the printer's self-signed certificate for `ipps://` addresses |
+
+The address of an `ipp` printer is `host[:port]` (port 631 if omitted) or a
+full `ipp://` or `ipps://` URI, e.g. `ipps://canon.local/ipp/print`. The
+printer's `resolution_dpi` is the highest raster resolution used; most
+inkjets take 300 or 600 dpi. Printers that take only Apple's URF (some
+AirPrint-only models) are not supported. Two-sided PWG Raster requires a
+printer that does not turn back sides (`pwg-raster-document-sheet-back`
+`normal`); otherwise use `format=pdf` or one-sided printing. Paper sizes are
+sent as `media` only if the printer lists them.
 
 `brother-raster` supports A4 at 300, 600 and 1200 dpi (`-dpi 1200` is the
 driver's "HQ 1200") and Letter and A5 at 600 dpi. See

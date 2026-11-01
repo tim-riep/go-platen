@@ -234,3 +234,57 @@ func TestHalftone(t *testing.T) {
 		t.Error(d)
 	}
 }
+
+func TestRenderImagesColor(t *testing.T) {
+	// A red square on an otherwise empty (transparent) A4 page, and a
+	// landscape page with a blue square that is turned to portrait.
+	pdf := makePDF(595.276, 841.890, "1 0 0 rg 50 600 100 100 re f")
+	land := makePDF(841.890, 595.276, "0 0 1 rg 0 0 100 100 re f")
+	paper, _ := ParsePaper("A4")
+	o := PageOptions{Paper: paper, DPI: 72, AutoRotate: true}
+	var imgs []image.Image
+	for _, doc := range [][]byte{pdf, land} {
+		err := renderer(t).RenderImages(context.Background(), doc, o, true, func(_ int, img image.Image) error {
+			imgs = append(imgs, img)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	at := func(img image.Image, x, y int) [3]uint8 {
+		m := img.(*image.RGBA)
+		i := m.PixOffset(x, y)
+		return [3]uint8{m.Pix[i], m.Pix[i+1], m.Pix[i+2]}
+	}
+	red := imgs[0]
+	if b := red.Bounds(); b.Dx() != 595 || b.Dy() != 842 {
+		t.Fatalf("size %v", b)
+	}
+	if c := at(red, 100, 190); c != [3]uint8{255, 0, 0} {
+		t.Fatalf("square %v, want red", c)
+	}
+	if c := at(red, 400, 50); c != [3]uint8{255, 255, 255} {
+		t.Fatalf("background %v, want white", c)
+	}
+	// The landscape page's bottom left corner ends up top left.
+	blue := imgs[1]
+	if b := blue.Bounds(); b.Dx() != 595 || b.Dy() != 842 {
+		t.Fatalf("rotated size %v", b)
+	}
+	if c := at(blue, 50, 50); c != [3]uint8{0, 0, 255} {
+		t.Fatalf("rotated square %v, want blue", c)
+	}
+
+	// Gray rendering returns 8-bit gray.
+	err := renderer(t).RenderImages(context.Background(), pdf, o, false, func(_ int, img image.Image) error {
+		g := img.(*image.Gray)
+		if v := g.GrayAt(100, 190).Y; v == 0 || v == 255 {
+			t.Fatalf("red as gray: %d", v)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}

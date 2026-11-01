@@ -24,6 +24,7 @@ import (
 	"github.com/tim-riep/go-platen/internal/api"
 	"github.com/tim-riep/go-platen/internal/auth"
 	"github.com/tim-riep/go-platen/internal/backend"
+	ippbackend "github.com/tim-riep/go-platen/internal/backend/ipp"
 	"github.com/tim-riep/go-platen/internal/backend/raw"
 	"github.com/tim-riep/go-platen/internal/server"
 	"github.com/tim-riep/go-platen/internal/spool"
@@ -122,7 +123,7 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reg := backend.NewRegistry(raw.Factory)
+	reg := backend.NewRegistry(raw.Factory, ippbackend.Factory)
 	srv, err := server.New(server.Options{
 		Store: st, Spool: sp, Peers: fixedPeer{"peer-a"}, Logger: testLogger(t), LocalWorker: true,
 		Backends: reg.ContentTypes, MaxAttempts: 2, LeaseDuration: 3 * time.Second, ExpiryInterval: 100 * time.Millisecond,

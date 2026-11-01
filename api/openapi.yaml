@@ -1017,7 +1017,7 @@ components:
         options:
           type: object
           additionalProperties: { type: string }
-          description: "Backend options, e.g. dither (threshold, halftone, floyd-steinberg), threshold (1-255), rotate (auto, none); brother-raster also source (tray, auto, manual), media (plain, thick), toner_save (off, on)"
+          description: "Backend options, e.g. dither (threshold, halftone, floyd-steinberg), threshold (1-255), rotate (auto, none); brother-raster also source (tray, auto, manual), media (plain, thick), toner_save (off, on); ipp format (auto, pdf, pwg-raster), color (auto, color, monochrome), sides, quality (draft, normal, high), path, wait, insecure-tls"
         status: { type: string, enum: [ready, paused] }
     AdminPrinter:
       allOf:

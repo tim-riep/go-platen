@@ -1,10 +1,12 @@
 // Package backend defines how workers turn a document into the data stream
 // a printer understands, and a registry of the available backends.
 //
-// A backend writes to an io.Writer and never talks to the printer itself,
-// so every backend can be tested without hardware. New backends (e.g. PCL
-// or PostScript) are added by implementing Backend and registering a
-// Factory; nothing else needs to change.
+// A backend writes to an io.Writer and, by default, the worker sends that
+// stream to the printer over raw TCP, so every backend can be tested
+// without hardware. A backend whose printers speak a protocol (IPP)
+// implements Deliverer as well and sends the stream itself. New backends
+// (e.g. PCL or PostScript) are added by implementing Backend and
+// registering a Factory; nothing else needs to change.
 package backend
 
 import (
@@ -12,8 +14,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"sort"
 	"sync"
+	"time"
 )
 
 // JobOptions are the parameters of one print job.
@@ -27,6 +31,15 @@ type JobOptions struct {
 	ResolutionDPI int
 	// Options are backend specific printer options from the server.
 	Options map[string]string
+	// Address is the printer's address from the server. Backends that
+	// ask the printer for its capabilities use it with Dialer.
+	Address string
+	Dialer  Dialer
+}
+
+// Dialer opens connections in the worker's local network.
+type Dialer interface {
+	DialContext(ctx context.Context, network, address string) (net.Conn, error)
 }
 
 // Backend renders documents for a type of printer.
@@ -35,6 +48,19 @@ type Backend interface {
 	Accepts(contentType string) bool
 	// Print renders doc and writes the printer data stream to out.
 	Print(ctx context.Context, doc io.Reader, opts JobOptions, out io.Writer) error
+}
+
+// Deliverer is implemented by backends that deliver their output to the
+// printer themselves instead of the worker's raw TCP connection.
+type Deliverer interface {
+	// Deliver sends data, the output of Print with the given size, and
+	// waits until the printer accepted it. Errors follow the rules of
+	// printer.Send: a *printer.SendError tells whether data may have
+	// reached the printer, a *printer.RefusedError that the printer
+	// refused the job.
+	Deliver(ctx context.Context, data io.Reader, size int64, opts JobOptions) error
+	// Probe checks whether the printer at address is reachable.
+	Probe(ctx context.Context, d Dialer, address string, timeout time.Duration) error
 }
 
 // Factory describes a backend.
