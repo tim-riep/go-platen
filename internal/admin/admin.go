@@ -89,7 +89,9 @@ Printers:
   printer get <id>
   printer create <id> -worker W -address HOST[:PORT] -backend B
                                           port 9100 if omitted, 631 for -backend ipp;
-                                          ipp also takes ipp:// or ipps:// URIs
+                                          ipp also takes ipp:// or ipps:// URIs;
+                                          a USB printer is its device, e.g. /dev/usb/lp0;
+                                          -paper also takes label sizes such as 4x6in, 100x150mm
                  [-name N] [-paper A4] [-dpi 600] [-status ready|paused]
                  [-option key=value ...]
   printer update <id> [same flags as create]

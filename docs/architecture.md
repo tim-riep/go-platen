@@ -60,7 +60,8 @@ in userspace mode (no root, no TUN device):
   by its NetBird DNS name. They set `BlockInbound`, so they accept no
   connections from the mesh, and open no local port.
 - Workers reach printers through the regular local network (`net.Dial`, raw
-  TCP port 9100, or IPP on port 631), not through NetBird.
+  TCP port 9100, or IPP on port 631), not through NetBird, or through a
+  device file such as `/dev/usb/lp0` for USB printers.
 
 NetBird itself uses UDP sockets on the host for the WireGuard tunnel and for
 connectivity checks; these belong to the mesh transport, not to platen's
@@ -163,6 +164,7 @@ backends and to reject documents a printer's backend cannot print.
 | `raw` | anything | the document unchanged, repeated per copy (e.g. ZPL) |
 | `pdf-to-raster` | `application/pdf` | 1-bit bitmaps as PBM (P4) pages |
 | `brother-raster` | `application/pdf` | Brother HL-2135W print data (A4 at 300/600/1200 dpi, Letter and A5 at 600 dpi), see [brother-raster-format.md](brother-raster-format.md) |
+| `zpl` | `application/pdf` | one ZPL label format per page, the page as a compressed `^GFA` graphic (e.g. Zebra ZD220 at 203 dpi) |
 | `ipp` | `application/pdf` | an IPP Print-Job request with the PDF as it is, or PWG Raster (PWG 5102.4) rendered in sRGB or sGray |
 
 ### IPP

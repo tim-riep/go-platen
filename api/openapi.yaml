@@ -1012,12 +1012,12 @@ components:
         name: { type: string }
         address: { type: string, description: "host:port in the worker's local network" }
         backend: { type: string, examples: [raw, pdf-to-raster] }
-        paper_size: { type: string, examples: [A4, Letter] }
+        paper_size: { type: string, description: "A4, A5, A6, Letter, Legal or <width>x<height> in mm or in", examples: [A4, Letter, 4x6in, 100x150mm] }
         resolution_dpi: { type: integer }
         options:
           type: object
           additionalProperties: { type: string }
-          description: "Backend options, e.g. dither (threshold, halftone, floyd-steinberg), threshold (1-255), rotate (auto, none); brother-raster also source (tray, auto, manual), media (plain, thick), toner_save (off, on); ipp format (auto, pdf, pwg-raster), color (auto, color, monochrome), sides, quality (draft, normal, high), path, wait, insecure-tls"
+          description: "Backend options, e.g. dither (threshold, halftone, floyd-steinberg), threshold (1-255), rotate (auto, none); brother-raster also source (tray, auto, manual), media (plain, thick), toner_save (off, on); zpl also darkness (-30 to 30); ipp format (auto, pdf, pwg-raster), color (auto, color, monochrome), sides, quality (draft, normal, high), path, wait, insecure-tls"
         status: { type: string, enum: [ready, paused] }
     AdminPrinter:
       allOf:

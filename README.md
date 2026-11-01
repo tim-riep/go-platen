@@ -25,7 +25,10 @@ interface, and workers accept no inbound connections at all.
   threshold, halftone or error diffusion) and `brother-raster` (Brother
   HL-2135W: A4 at 300, 600 and 1200 dpi, Letter and A5 at 600 dpi) over raw
   TCP, and `ipp` for driverless printers (IPP Everywhere, AirPrint: PDF as it
-  is, or PWG Raster in color or gray); designed for more printer languages
+  is, or PWG Raster in color or gray), and `zpl` for PDF labels on Zebra
+  label printers; designed for more printer languages
+- Printers on the network (raw TCP 9100, IPP 631) or on USB at the worker
+  (`/dev/usb/lp0`)
 - SQLite store (pure Go) behind an interface, documents in a spool directory
 
 ## Architecture

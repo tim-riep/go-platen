@@ -14,7 +14,7 @@ offers the same with `platen admin job cancel|retry|delete <id>`.
 
 **Printing a file**: admins can print a file on any printer with *Print…* in
 the printer list or *Print a file* under Jobs. The file is sent as it is, as
-the ERP does: PDF for `pdf-to-raster`, `brother-raster` and `ipp` printers, the
+the ERP does: PDF for `pdf-to-raster`, `brother-raster`, `ipp` and `zpl` printers, the
 printer's own language (e.g. ZPL) for `raw` printers. The job records
 `panel:<NetBird IP>` as its submitter; the admin API and
 `platen admin job print <printer> <file>` record `admin`. Like

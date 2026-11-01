@@ -6,6 +6,7 @@ import (
 	"image"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -203,15 +204,44 @@ var papers = map[string]Paper{
 }
 
 // ParsePaper returns the paper size with the name; empty means A4.
+// Besides the names above, a size can be given as <width>x<height> in mm
+// or in, e.g. "100x150mm" or "4x6in" for labels; width is the side across
+// the print head.
 func ParsePaper(name string) (Paper, error) {
 	if name == "" {
 		name = "a4"
 	}
-	p, ok := papers[strings.ToLower(name)]
-	if !ok {
-		return Paper{}, fmt.Errorf("unknown paper size %q", name)
+	if p, ok := papers[strings.ToLower(name)]; ok {
+		return p, nil
 	}
-	return p, nil
+	if p, ok := customPaper(name); ok {
+		return p, nil
+	}
+	return Paper{}, fmt.Errorf("unknown paper size %q; use A4, A5, A6, Letter, Legal or a size such as 100x150mm or 4x6in", name)
+}
+
+func customPaper(name string) (Paper, bool) {
+	s := strings.ToLower(strings.TrimSpace(name))
+	var unit float64
+	switch {
+	case strings.HasSuffix(s, "mm"):
+		unit, s = 72/25.4, strings.TrimSuffix(s, "mm")
+	case strings.HasSuffix(s, "in"):
+		unit, s = 72, strings.TrimSuffix(s, "in")
+	default:
+		return Paper{}, false
+	}
+	ws, hs, ok := strings.Cut(s, "x")
+	if !ok {
+		return Paper{}, false
+	}
+	w, err1 := strconv.ParseFloat(ws, 64)
+	h, err2 := strconv.ParseFloat(hs, 64)
+	// From 10 mm up to 1.2 m, the longest label roll lengths.
+	if err1 != nil || err2 != nil || w*unit < 28 || h*unit < 28 || w*unit > 3400 || h*unit > 3400 {
+		return Paper{}, false
+	}
+	return Paper{Name: name, Width: w * unit, Height: h * unit}, true
 }
 
 // Pixels returns the paper size in pixels at the resolution.

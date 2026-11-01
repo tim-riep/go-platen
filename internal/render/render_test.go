@@ -288,3 +288,28 @@ func TestRenderImagesColor(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCustomPaper(t *testing.T) {
+	p, err := ParsePaper("4x6in")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w, h := p.Pixels(203); w != 812 || h != 1218 {
+		t.Fatalf("4x6in at 203 dpi: %dx%d", w, h)
+	}
+	p, err = ParsePaper("100x150mm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w, h := p.Pixels(203); w != 799 || h != 1199 {
+		t.Fatalf("100x150mm at 203 dpi: %dx%d", w, h)
+	}
+	if p, err := ParsePaper("57.5X32MM"); err != nil || p.Name != "57.5X32MM" {
+		t.Fatalf("decimal size: %+v %v", p, err)
+	}
+	for _, bad := range []string{"100x", "x50mm", "100x150", "1x1mm", "5000x100mm", "axbmm", "B5"} {
+		if _, err := ParsePaper(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

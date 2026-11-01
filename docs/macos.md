@@ -32,7 +32,7 @@ renamed ones are updated and removed ones are deleted. **Remove Printers &
 Disconnect** deletes all printers Platen installed.
 
 Only printers whose backend takes PDF are installed (`pdf-to-raster`,
-`brother-raster`, `ipp`); `raw` printers (e.g. ZPL) are left out.
+`brother-raster`, `ipp`, `zpl`); `raw` printers (e.g. ZPL) are left out.
 
 ## How it works
 

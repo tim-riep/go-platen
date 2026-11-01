@@ -11,6 +11,7 @@ import (
 
 	"github.com/tim-riep/go-platen/internal/api"
 	"github.com/tim-riep/go-platen/internal/auth"
+	"github.com/tim-riep/go-platen/internal/render"
 	"github.com/tim-riep/go-platen/internal/store"
 )
 
@@ -271,8 +272,15 @@ func (s *Server) applyPrinter(p *store.Printer, req *api.PrinterRequest) error {
 	case p.Status != store.PrinterReady && p.Status != store.PrinterPaused:
 		return errBadRequest("status must be %q or %q", store.PrinterReady, store.PrinterPaused)
 	}
-	if !strings.Contains(p.Address, ":") {
-		// Raw TCP printers listen on 9100, IPP printers on 631.
+	if _, err := render.ParsePaper(p.PaperSize); err != nil {
+		return errBadRequest("%v", err)
+	}
+	if strings.HasPrefix(p.Address, "/") && !strings.HasPrefix(p.Address, "/dev/") {
+		return errBadRequest("a device address must be below /dev, e.g. /dev/usb/lp0")
+	}
+	if !strings.Contains(p.Address, ":") && !strings.HasPrefix(p.Address, "/") {
+		// Raw TCP printers listen on 9100, IPP printers on 631; an
+		// absolute path is a device file such as /dev/usb/lp0.
 		if p.Backend == "ipp" {
 			p.Address += ":631"
 		} else {

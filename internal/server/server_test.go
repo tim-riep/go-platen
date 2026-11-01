@@ -514,6 +514,16 @@ func TestAdminCRUD(t *testing.T) {
 		t.Fatalf("ipp uri %q", p.Address)
 	}
 	e.expect(e.do("DELETE", "/admin/v1/printers/ink", e.admin, nil), 204)
+
+	// USB printers are device files below /dev; labels have custom sizes.
+	e.expect(e.do("POST", "/admin/v1/printers", e.admin, map[string]any{"id": "zebra", "worker_id": "local", "address": "/dev/usb/lp0", "backend": "pdf",
+		"paper_size": "4x6in", "resolution_dpi": 203}), 201).decode(t, &p)
+	if p.Address != "/dev/usb/lp0" || p.PaperSize != "4x6in" {
+		t.Fatalf("usb printer %+v", p)
+	}
+	e.expect(e.do("PATCH", "/admin/v1/printers/zebra", e.admin, map[string]any{"address": "/etc/passwd"}), 400)
+	e.expect(e.do("PATCH", "/admin/v1/printers/zebra", e.admin, map[string]any{"paper_size": "B5"}), 400)
+	e.expect(e.do("DELETE", "/admin/v1/printers/zebra", e.admin, nil), 204)
 	e.expect(e.do("GET", "/admin/v1/printers/lp", e.admin, nil), 404)
 
 	var workers api.List[api.Worker]

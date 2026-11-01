@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -76,6 +78,27 @@ func TestSendWriteTimeout(t *testing.T) {
 func TestProbe(t *testing.T) {
 	addr := listen(t, func(c net.Conn) { c.Close() })
 	if err := Probe(context.Background(), &net.Dialer{}, addr, time.Second); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDevice(t *testing.T) {
+	ctx := context.Background()
+	// Regular files and paths outside /dev are refused.
+	f := filepath.Join(t.TempDir(), "lp0")
+	os.WriteFile(f, nil, 0o600)
+	if _, err := Send(ctx, nil, f, strings.NewReader("x"), Options{}); err == nil || !IsSafeToRetry(err) {
+		t.Fatalf("file outside /dev: %v", err)
+	}
+	if err := Probe(ctx, nil, "/dev/platen-missing-lp", time.Second); err == nil {
+		t.Fatal("missing device probed")
+	}
+	// /dev/null is a character device.
+	n, err := Send(ctx, nil, "/dev/null", strings.NewReader("^XA^XZ"), Options{})
+	if err != nil || n != 6 {
+		t.Fatalf("send to /dev/null: %d %v", n, err)
+	}
+	if err := Probe(ctx, nil, "/dev/null", time.Second); err != nil {
 		t.Fatal(err)
 	}
 }

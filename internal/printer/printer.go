@@ -1,6 +1,8 @@
 // Package printer sends data streams to network printers over raw TCP
-// (port 9100, also known as AppSocket or JetDirect). Printers are reached
-// through the regular local network, not through the mesh.
+// (port 9100, also known as AppSocket or JetDirect), or to printers on a
+// local port such as USB through their device file (e.g. /dev/usb/lp0 on
+// Linux). Printers are reached through the regular local network, not
+// through the mesh.
 package printer
 
 import (
@@ -9,8 +11,31 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"strings"
 	"time"
 )
+
+// IsDevice reports whether the printer address is a device file, such as
+// /dev/usb/lp0, instead of host:port.
+func IsDevice(addr string) bool { return strings.HasPrefix(addr, "/") }
+
+// openDevice opens a printer device for writing. Only character devices
+// below /dev are opened, so a printer address can never make the worker
+// write to a regular file.
+func openDevice(path string) (*os.File, error) {
+	if !strings.HasPrefix(path, "/dev/") {
+		return nil, fmt.Errorf("%s: device addresses must be below /dev", path)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if fi.Mode()&os.ModeCharDevice == 0 {
+		return nil, fmt.Errorf("%s is not a character device", path)
+	}
+	return os.OpenFile(path, os.O_WRONLY, 0)
+}
 
 // Dialer opens connections; *net.Dialer implements it.
 type Dialer interface {
@@ -73,6 +98,9 @@ func (e *RefusedError) Unwrap() error { return e.Err }
 // Send connects to addr and writes r to the printer.
 func Send(ctx context.Context, d Dialer, addr string, r io.Reader, o Options) (int64, error) {
 	o.defaults()
+	if IsDevice(addr) {
+		return sendDevice(ctx, addr, r)
+	}
 	dctx, cancel := context.WithTimeout(ctx, o.DialTimeout)
 	conn, err := d.DialContext(dctx, "tcp", addr)
 	cancel()
@@ -116,8 +144,46 @@ func (w *deadlineWriter) Write(p []byte) (int, error) {
 	return w.conn.Write(p)
 }
 
-// Probe checks whether the printer accepts connections.
+// sendDevice writes r to a printer device file. The kernel driver passes
+// the data to the printer and blocks while the printer is busy; writes
+// cannot be interrupted, so a canceled ctx is noticed between writes.
+func sendDevice(ctx context.Context, path string, r io.Reader) (int64, error) {
+	f, err := openDevice(path)
+	if err != nil {
+		return 0, &SendError{Err: err}
+	}
+	n, err := io.Copy(f, &ctxReader{ctx: ctx, r: r})
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return n, &SendError{Written: n, Err: err}
+	}
+	return n, nil
+}
+
+type ctxReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (c *ctxReader) Read(p []byte) (int, error) {
+	if err := c.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return c.r.Read(p)
+}
+
+// Probe checks whether the printer accepts connections; a device file
+// must exist and be writable.
 func Probe(ctx context.Context, d Dialer, addr string, timeout time.Duration) error {
+	if IsDevice(addr) {
+		f, err := openDevice(addr)
+		if err != nil {
+			return err
+		}
+		return f.Close()
+	}
 	if timeout <= 0 {
 		timeout = 3 * time.Second
 	}

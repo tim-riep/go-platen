@@ -115,7 +115,7 @@ function adminButton(label, onclick, cls) {
 // ---- dialog ----
 
 // openDialog shows a form. fields: [{name, label, type, value, options,
-// hint, required, placeholder}]. submit receives the values and may throw
+// hint, required, placeholder, suggestions}]. submit receives the values and may throw
 // an APIError, which is shown in the dialog.
 function openDialog(title, fields, submit, okLabel) {
   const dlg = document.getElementById("dialog");
@@ -160,11 +160,13 @@ function openDialog(title, fields, submit, okLabel) {
       input = el("input", { id, name: f.name, type: "file", required: f.required, accept: f.accept });
     } else {
       input = el("input", { id, name: f.name, type: f.type || "text", required: f.required, placeholder: f.placeholder || "", readonly: f.readonly,
-        min: f.min, max: f.max });
+        min: f.min, max: f.max, list: f.suggestions ? id + "-list" : null });
       input.value = f.value === undefined || f.value === null ? "" : f.value;
+
     }
     inputs[f.name] = input;
-    body.append(el("div", { class: "field" }, el("label", { for: id }, f.label), input, f.hint ? el("span", { class: "hint" }, f.hint) : null));
+    const list = f.suggestions ? el("datalist", { id: id + "-list" }, f.suggestions.map(o => el("option", { value: o }))) : null;
+    body.append(el("div", { class: "field" }, el("label", { for: id }, f.label), input, list, f.hint ? el("span", { class: "hint" }, f.hint) : null));
   }
   const values = () => {
     const out = {};
@@ -274,12 +276,13 @@ async function editPrinter(p, workers) {
     { name: "id", label: "ID", value: p.id, required: isNew, readonly: !isNew, hint: isNew ? "Lower case letters, digits, - and _; used in the API." : "" },
     { name: "name", label: "Name", value: p.name },
     { name: "worker_id", label: "Worker", type: "select", value: p.worker_id, options: workers.map(w => [w.id, w.name + " (" + w.id + ")"]) },
-    { name: "address", label: "Address", value: p.address, required: true, placeholder: "192.168.1.20 or host:9100", hint: "In the worker's local network; port 9100 if omitted, 631 for ipp. ipp also takes ipp:// or ipps:// URIs." },
+    { name: "address", label: "Address", value: p.address, required: true, placeholder: "192.168.1.20 or host:9100", hint: "In the worker's local network; port 9100 if omitted, 631 for ipp. ipp also takes ipp:// or ipps:// URIs; a USB printer is its device, e.g. /dev/usb/lp0." },
     { name: "backend", label: "Backend", type: "select", value: p.backend, options: backends },
-    { name: "paper_size", label: "Paper", type: "select", value: p.paper_size, options: ["A4", "A5", "A6", "Letter", "Legal"] },
-    { name: "resolution_dpi", label: "Resolution", type: "select", value: p.resolution_dpi, options: [[300, "300 dpi"], [600, "600 dpi"], [1200, "1200 dpi"]] },
+    { name: "paper_size", label: "Paper", value: p.paper_size, required: true, suggestions: ["A4", "A5", "A6", "Letter", "Legal", "4x6in", "100x150mm", "100x50mm"],
+      hint: "A4, A5, A6, Letter, Legal or a label size such as 100x150mm or 4x6in." },
+    { name: "resolution_dpi", label: "Resolution", type: "select", value: p.resolution_dpi, options: [[203, "203 dpi"], [300, "300 dpi"], [600, "600 dpi"], [1200, "1200 dpi"]] },
     { name: "status", label: "Status", type: "select", value: p.status, options: [["ready", "Ready"], ["paused", "Paused"]] },
-    { name: "options", label: "Options", type: "textarea", value: optionsText(p.options), placeholder: "dither=halftone", hint: "One key=value per line, e.g. dither, source, media, toner_save; for ipp format, color, sides, quality." },
+    { name: "options", label: "Options", type: "textarea", value: optionsText(p.options), placeholder: "dither=halftone", hint: "One key=value per line, e.g. dither, source, media, toner_save; for ipp format, color, sides, quality; for zpl darkness." },
   ], async v => {
     const body = { name: v.name || v.id, worker_id: v.worker_id, address: v.address, backend: v.backend, paper_size: v.paper_size,
       resolution_dpi: Number(v.resolution_dpi), status: v.status, options: parseOptions(v.options) };
@@ -299,7 +302,7 @@ function printFile(printer, printers) {
   }
   fields.push(
     { name: "file", label: "File", type: "file", required: true,
-      hint: "PDF for pdf-to-raster, brother-raster and ipp printers; raw printers receive the file unchanged (e.g. ZPL)." },
+      hint: "PDF for pdf-to-raster, brother-raster, ipp and zpl printers; raw printers receive the file unchanged (e.g. ZPL)." },
     { name: "copies", label: "Copies", type: "number", value: 1, min: 1, max: 999 },
     { name: "title", label: "Title", placeholder: "defaults to the file name" });
   openDialog(printer ? "Print on " + printer.name : "Print a file", fields, async v => {

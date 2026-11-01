@@ -93,6 +93,10 @@ platen admin -config admin.toml printer create zebra-1 -worker site-hamburg -add
 platen admin -config admin.toml printer create office-1 -worker site-hamburg -address 192.168.10.21 \
     -backend pdf-to-raster -paper A4 -dpi 600 -option dither=threshold
 
+# A Zebra label printer on USB at the worker, printing PDF labels
+platen admin -config admin.toml printer create zebra-usb -worker site-hamburg -address /dev/usb/lp0 \
+    -backend zpl -paper 4x6in -dpi 203
+
 # A driverless inkjet (IPP Everywhere, AirPrint), port 631 if omitted
 platen admin -config admin.toml printer create inkjet-1 -worker site-hamburg -address 192.168.10.22 -backend ipp -dpi 300
 
@@ -146,6 +150,8 @@ Set with `-option key=value` on `printer create`/`update`:
 | | `media` | `plain` (default), `thick` |
 | | `toner_save` | `off` (default), `on` |
 
+| `zpl` | `dither`, `threshold`, `rotate` | as for `pdf-to-raster`; default `threshold` |
+| | `darkness` | `-30`–`30`, changes the printer's darkness for these labels (`^MD`) |
 | `ipp` | `format` | `auto` (default: PDF if the printer accepts it, else PWG Raster), `pdf`, `pwg-raster` |
 | | `color` | `auto` (default: the printer's default for PDF, color raster if supported), `color`, `monochrome` |
 | | `sides` | `one-sided`, `two-sided-long-edge`, `two-sided-short-edge`; default: the printer's default |
@@ -163,6 +169,50 @@ AirPrint-only models) are not supported. Two-sided PWG Raster requires a
 printer that does not turn back sides (`pwg-raster-document-sheet-back`
 `normal`); otherwise use `format=pdf` or one-sided printing. Paper sizes are
 sent as `media` only if the printer lists them.
+
+Paper sizes are `A4`, `A5`, `A6`, `Letter`, `Legal` or any size as
+`<width>x<height>` in `mm` or `in`, e.g. `100x150mm` or `4x6in` for labels
+(width across the print head). Pages are scaled to fit, keeping their
+aspect ratio, and turned when their orientation differs.
+
+The `zpl` backend prints each PDF page as one label: set the paper size to
+the label size and the resolution to the printer's (203 dpi for the Zebra
+ZD220 and most desktop label printers, 300 dpi for the 300 dpi models). Media
+type, gaps and calibration stay as configured on the printer. ZPL documents
+from the application go to `raw` printers instead.
+
+### USB printers
+
+A printer connected by USB to the worker's Linux machine is addressed by
+its device file, e.g. `/dev/usb/lp0` (the kernel's `usblp` driver; check
+with `ls -l /dev/usb/`). The worker writes the data to it as it would to
+port 9100. Only character devices below `/dev` are accepted.
+
+The device usually belongs to the group `lp`. With the systemd unit, give
+the worker access with a drop-in (`systemctl edit platen-worker`, or
+`platen-server` for the built-in worker):
+
+```ini
+[Service]
+SupplementaryGroups=lp
+PrivateDevices=no
+DevicePolicy=closed
+DeviceAllow=/dev/usb/lp0 w
+```
+
+In Docker, pass the device and the host's `lp` group id
+(`getent group lp`):
+
+```yaml
+services:
+  platen-worker:
+    devices: ["/dev/usb/lp0"]
+    group_add: ["7"]
+```
+
+If more than one USB printer is attached, `lp0` and `lp1` can swap after a
+restart; a udev rule with a fixed name (e.g. `/dev/usb/zebra`, matched on
+the printer's serial number) keeps the address stable.
 
 `brother-raster` supports A4 at 300, 600 and 1200 dpi (`-dpi 1200` is the
 driver's "HQ 1200") and Letter and A5 at 600 dpi. See
