@@ -101,12 +101,19 @@ App clients:
   client delete <id>
   client rotate-token <id>
 
-Web panel users (identified by NetBird IPv4 address):
+Web panel users (identified by NetBird IPv4 address or e-mail address):
   panel-user list
-  panel-user add <ip> [-name N] [-role admin|viewer]
-  panel-user update <ip> [-name N] [-role admin|viewer]
-  panel-user delete <ip>
+  panel-user add <ip|email> [-name N] [-role admin|viewer]
+                                          an e-mail address is for users who come
+                                          through a NetBird reverse proxy
+  panel-user update <ip|email> [-name N] [-role admin|viewer]
+  panel-user delete <ip|email>
   panel-user reset <ip>                   bind the NetBird peer again on the next visit
+
+Proxy keys (let a NetBird reverse proxy name the panel user):
+  proxy-key list
+  proxy-key create <name>                 prints the key and its header once
+  proxy-key delete <id>
 
 Jobs:
   job list [-status S] [-printer P] [-client C] [-worker W] [-limit N]
@@ -143,6 +150,8 @@ func Run(ctx context.Context, c *Client, args []string, out io.Writer) error {
 		result, err = jobCmd(ctx, c, action, rest)
 	case "panel-user", "panel-users":
 		result, err = panelUserCmd(ctx, c, action, rest)
+	case "proxy-key", "proxy-keys":
+		result, err = proxyKeyCmd(ctx, c, action, rest)
 	default:
 		return fmt.Errorf("%w: unknown resource %q", ErrUsage, resource)
 	}
@@ -443,6 +452,9 @@ func panelUserCmd(ctx context.Context, c *Client, action string, args []string) 
 	switch action {
 	case "add":
 		req := api.PanelUserRequest{IP: ip, Name: ptr(given["name"], *name), Role: ptr(given["role"], *role)}
+		if strings.Contains(ip, "@") {
+			req.IP, req.Email = "", ip
+		}
 		return u, c.do(ctx, http.MethodPost, "/admin/v1/panel-users", req, &u)
 	case "update":
 		req := api.PanelUserRequest{Name: ptr(given["name"], *name), Role: ptr(given["role"], *role)}
@@ -452,6 +464,30 @@ func panelUserCmd(ctx context.Context, c *Client, action string, args []string) 
 	default:
 		return u, c.do(ctx, http.MethodPost, p+"/reset-peer", nil, &u)
 	}
+}
+
+func proxyKeyCmd(ctx context.Context, c *Client, action string, args []string) (any, error) {
+	fs := flag.NewFlagSet("proxy-key", flag.ContinueOnError)
+	switch action {
+	case "list":
+		if _, err := parse(fs, args); err != nil {
+			return nil, err
+		}
+		var l api.List[api.ProxyKey]
+		return l, c.do(ctx, http.MethodGet, "/admin/v1/proxy-keys", nil, &l)
+	case "create", "delete":
+	default:
+		return nil, fmt.Errorf("%w: unknown proxy-key action %q", ErrUsage, action)
+	}
+	arg, err := oneID(fs, args)
+	if err != nil {
+		return nil, err
+	}
+	if action == "create" {
+		var k api.ProxyKeyCreated
+		return k, c.do(ctx, http.MethodPost, "/admin/v1/proxy-keys", api.ProxyKeyRequest{Name: arg}, &k)
+	}
+	return nil, c.do(ctx, http.MethodDelete, path("admin", "v1", "proxy-keys", arg), nil, nil)
 }
 
 // printFile submits a file to a printer through the admin API.

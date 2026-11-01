@@ -131,6 +131,17 @@ CREATE TABLE settings (
 	updated_at  INTEGER NOT NULL
 );
 `,
+	// 4: keys of NetBird reverse proxies that name the panel user
+	`
+CREATE TABLE proxy_keys (
+	id          TEXT PRIMARY KEY,
+	name        TEXT NOT NULL,
+	hash        TEXT NOT NULL UNIQUE,
+	created_at  INTEGER NOT NULL,
+	last_used   INTEGER,
+	last_peer   TEXT NOT NULL DEFAULT ''
+);
+`,
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {

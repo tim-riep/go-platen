@@ -498,6 +498,37 @@ func TestPanelUsers(t *testing.T) {
 	}
 }
 
+func TestProxyKeys(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	k := &ProxyKey{ID: "k1", Name: "NetBird proxy", Hash: "sha256:aa", CreatedAt: t0}
+	if err := s.CreateProxyKey(ctx, k); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateProxyKey(ctx, &ProxyKey{ID: "k2", Hash: "sha256:aa", CreatedAt: t0}); !errors.Is(err, ErrExists) {
+		t.Fatalf("duplicate hash: %v", err)
+	}
+	if err := s.TouchProxyKey(ctx, "k1", t0.Add(time.Hour), "proxy-1.netbird.cloud"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetProxyKeyByHash(ctx, "sha256:aa")
+	if err != nil || got.ID != "k1" || got.LastUsed == nil || got.LastPeer != "proxy-1.netbird.cloud" {
+		t.Fatalf("get: %+v %v", got, err)
+	}
+	if _, err := s.GetProxyKeyByHash(ctx, "sha256:bb"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown hash: %v", err)
+	}
+	if err := s.DeleteProxyKey(ctx, "k1"); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := s.ListProxyKeys(ctx); err != nil || len(list) != 0 {
+		t.Fatalf("list after delete: %+v %v", list, err)
+	}
+	if err := s.DeleteProxyKey(ctx, "k1"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("delete twice: %v", err)
+	}
+}
+
 func TestRetryAndDeleteJob(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()

@@ -47,6 +47,28 @@ func (d *nbDirectory) device(ip string) (nbDevice, bool) {
 	return dev, ok
 }
 
+// userByEmail finds a NetBird user that owns a device by e-mail address.
+func (d *nbDirectory) userByEmail(email string) (netbirdapi.User, bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	for _, dev := range d.byIP {
+		if dev.User.Email != "" && strings.EqualFold(dev.User.Email, email) {
+			return dev.User, true
+		}
+	}
+	return netbirdapi.User{}, false
+}
+
+// belongsTo reports whether the panel user is a device or the e-mail
+// address of the NetBird user.
+func (d *nbDirectory) belongsTo(row *store.PanelUser, u netbirdapi.User) bool {
+	if row.IsEmail() {
+		return u.Email != "" && strings.EqualFold(row.IP, u.Email)
+	}
+	dev, ok := d.device(row.IP)
+	return ok && dev.UserID == u.ID
+}
+
 func (d *nbDirectory) clear() {
 	d.mu.Lock()
 	d.byIP, d.users, d.lastSync, d.lastErr = nil, 0, time.Time{}, ""
@@ -183,18 +205,35 @@ func (s *Server) inheritedRole(ctx context.Context, ip string, peer Peer) (store
 	if !strings.EqualFold(strings.TrimSuffix(dev.DNSLabel, "."), strings.TrimSuffix(peer.FQDN, ".")) {
 		return "", "", nil
 	}
+	role, err := s.nbUserRole(ctx, dev.User)
+	return role, nbUserLabel(dev.User), err
+}
+
+// inheritedRoleByEmail returns the highest panel role of the NetBird user
+// with the e-mail address, for users who come through a NetBird proxy.
+func (s *Server) inheritedRoleByEmail(ctx context.Context, email string) (store.PanelRole, string, error) {
+	u, ok := s.nb.userByEmail(email)
+	if !ok || u.IsBlocked {
+		return "", "", nil
+	}
+	role, err := s.nbUserRole(ctx, u)
+	return role, nbUserLabel(u), err
+}
+
+// nbUserRole returns the highest role of the panel users that belong to
+// the NetBird user: the user's devices and the user's e-mail address.
+func (s *Server) nbUserRole(ctx context.Context, u netbirdapi.User) (store.PanelRole, error) {
 	rows, err := s.store.ListPanelUsers(ctx)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	var role store.PanelRole
 	for _, row := range rows {
-		other, ok := s.nb.device(row.IP)
-		if ok && other.UserID == dev.UserID && roleRank(row.Role) > roleRank(role) {
+		if s.nb.belongsTo(&row, u) && roleRank(row.Role) > roleRank(role) {
 			role = row.Role
 		}
 	}
-	return role, nbUserLabel(dev.User), nil
+	return role, nil
 }
 
 // ---- API ----
@@ -231,9 +270,19 @@ func (s *Server) netbirdStatus(ctx context.Context) (*api.NetBirdSync, error) {
 	out.Error, out.Users = s.nb.lastErr, s.nb.users
 	// The highest role per NetBird user.
 	userRole := map[string]store.PanelRole{}
-	for ip, role := range explicit {
-		if dev, ok := s.nb.byIP[ip]; ok && roleRank(role) > roleRank(userRole[dev.UserID]) {
-			userRole[dev.UserID] = role
+	emailUser := map[string]string{}
+	for _, dev := range s.nb.byIP {
+		if dev.User.Email != "" {
+			emailUser[strings.ToLower(dev.User.Email)] = dev.UserID
+		}
+	}
+	for key, role := range explicit {
+		uid := emailUser[key]
+		if dev, ok := s.nb.byIP[key]; ok {
+			uid = dev.UserID
+		}
+		if uid != "" && roleRank(role) > roleRank(userRole[uid]) {
+			userRole[uid] = role
 		}
 	}
 	for ip, dev := range s.nb.byIP {

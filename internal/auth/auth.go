@@ -19,6 +19,7 @@ const (
 	PrefixWorker     = "plt_wrk_"
 	PrefixEnrollment = "plt_enr_"
 	PrefixAdmin      = "plt_adm_"
+	PrefixProxy      = "plt_pxy_"
 )
 
 const hashPrefix = "sha256:"

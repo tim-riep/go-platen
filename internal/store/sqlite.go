@@ -973,6 +973,63 @@ func (s *SQLite) TouchPanelUser(ctx context.Context, ip string, at time.Time) er
 	return affected(s.db.ExecContext(ctx, `UPDATE panel_users SET last_seen = ? WHERE ip = ?`, ms(at), ip))
 }
 
+// ---- proxy keys ----
+
+const proxyKeyCols = `id, name, hash, created_at, last_used, last_peer`
+
+func scanProxyKey(sc scanner) (*ProxyKey, error) {
+	var k ProxyKey
+	var created int64
+	var used sql.NullInt64
+	err := sc.Scan(&k.ID, &k.Name, &k.Hash, &created, &used, &k.LastPeer)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	k.CreatedAt, k.LastUsed = fromMS(created), fromNullMS(used)
+	return &k, nil
+}
+
+func (s *SQLite) ListProxyKeys(ctx context.Context) ([]ProxyKey, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+proxyKeyCols+` FROM proxy_keys ORDER BY created_at, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ProxyKey
+	for rows.Next() {
+		k, err := scanProxyKey(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *k)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLite) CreateProxyKey(ctx context.Context, k *ProxyKey) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO proxy_keys (`+proxyKeyCols+`) VALUES (?,?,?,?,?,?)`,
+		k.ID, k.Name, k.Hash, ms(k.CreatedAt), msPtr(k.LastUsed), k.LastPeer)
+	if isUniqueViolation(err) {
+		return ErrExists
+	}
+	return err
+}
+
+func (s *SQLite) GetProxyKeyByHash(ctx context.Context, hash string) (*ProxyKey, error) {
+	return scanProxyKey(s.db.QueryRowContext(ctx, `SELECT `+proxyKeyCols+` FROM proxy_keys WHERE hash = ?`, hash))
+}
+
+func (s *SQLite) DeleteProxyKey(ctx context.Context, id string) error {
+	return affected(s.db.ExecContext(ctx, `DELETE FROM proxy_keys WHERE id = ?`, id))
+}
+
+func (s *SQLite) TouchProxyKey(ctx context.Context, id string, at time.Time, peer string) error {
+	return affected(s.db.ExecContext(ctx, `UPDATE proxy_keys SET last_used = ?, last_peer = ? WHERE id = ?`, ms(at), peer, id))
+}
+
 func (s *SQLite) RetryJob(ctx context.Context, id string, now time.Time) (*Job, error) {
 	var out *Job
 	err := s.tx(ctx, func(tx *sql.Tx) error {

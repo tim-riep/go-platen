@@ -64,6 +64,41 @@ higher of its own and the inherited role; the stored entry is not changed.
 - The admin API offers the same: `GET`, `PUT`, `DELETE /admin/v1/netbird`
   and `POST /admin/v1/netbird/sync`.
 
+## NetBird reverse proxy
+
+A [NetBird reverse proxy](https://docs.netbird.io) can publish the panel
+under a public name, e.g. `https://print.example.org`, with the proxy's
+sign-in in front. Requests then come from the proxy's own peer, not from
+the user's device, so the user is identified by the **e-mail address** the
+proxy sends in the `X-NetBird-User` header.
+
+Any peer could send that header, so platen trusts it only together with a
+**proxy key**:
+
+1. Under *Panel users → NetBird proxies*, *Generate key* and give it a name.
+   The key is shown once as a header line, e.g.
+   `X-Platen-Proxy-Key: plt_pxy_…`.
+2. Add that header to the requests the NetBird proxy forwards to platen.
+3. Add the users under *Panel users* by e-mail address, with role admin or
+   viewer. With the NetBird user sync, a NetBird user with that address also
+   gets the highest role of their devices, and an e-mail entry gives the
+   user's devices its role.
+
+Requests with a valid key:
+
+- may use any `Host`, the proxy's public name; state-changing requests must
+  have an `Origin` equal to that host. `X-Platen-Panel` is still required.
+- must still come from a NetBird peer, the proxy.
+- never claim the first admin.
+- are refused if `X-NetBird-User` holds no e-mail address. The proxy must
+  set that header itself and never pass on one sent by the browser.
+
+A request with an unknown key is refused, even when it is addressed to the
+server's own name. Deleting a key under *NetBird proxies* ends access
+through that proxy at once. The list shows when and from which peer each key
+was last used. The admin API offers the same under `/admin/v1/proxy-keys`
+and `platen admin proxy-key list|create <name>|delete <id>`.
+
 Panel users need no token; the NetBird identity is the credential. The NetBird
 access policies decide which peers can reach the server at all
 ([netbird.md](netbird.md)).
@@ -76,6 +111,7 @@ token:
 ```bash
 platen admin -config admin.toml panel-user list
 platen admin -config admin.toml panel-user add 100.64.0.12 -name "Laptop" -role admin
+platen admin -config admin.toml panel-user add ann@example.com -role viewer
 platen admin -config admin.toml panel-user reset 100.64.0.12
 ```
 

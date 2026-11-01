@@ -295,9 +295,11 @@ type List[T any] struct {
 // ---- web panel ----
 
 // PanelUser is a user of the web panel, identified by NetBird IPv4 address
-// and bound to a NetBird peer.
+// and bound to a NetBird peer, or by e-mail address for users who come
+// through a NetBird reverse proxy. Exactly one of IP and Email is set.
 type PanelUser struct {
-	IP       string `json:"ip"`
+	IP       string `json:"ip,omitempty"`
+	Email    string `json:"email,omitempty"`
 	Name     string `json:"name,omitempty"`
 	Role     string `json:"role"`
 	PeerID   string `json:"peer_id,omitempty"`
@@ -314,9 +316,10 @@ type PanelUser struct {
 // PanelUserRequest creates or updates a panel user. On update, nil fields
 // are left unchanged.
 type PanelUserRequest struct {
-	IP   string  `json:"ip,omitempty"`
-	Name *string `json:"name,omitempty"`
-	Role *string `json:"role,omitempty"`
+	IP    string  `json:"ip,omitempty"`
+	Email string  `json:"email,omitempty"`
+	Name  *string `json:"name,omitempty"`
+	Role  *string `json:"role,omitempty"`
 }
 
 // PanelMe describes the panel user making the request.
@@ -329,6 +332,33 @@ type PanelMe struct {
 	// Via names the NetBird user whose other device grants the role, when
 	// the role is inherited through the NetBird user sync.
 	Via string `json:"via,omitempty"`
+	// Proxy names the proxy key of the NetBird reverse proxy the request
+	// came through.
+	Proxy string `json:"proxy,omitempty"`
+}
+
+// ProxyKey lets a NetBird reverse proxy name the panel user: the proxy
+// sends the key in the X-Platen-Proxy-Key header and the user's e-mail
+// address in X-NetBird-User.
+type ProxyKey struct {
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	CreatedAt time.Time  `json:"created_at"`
+	LastUsed  *time.Time `json:"last_used,omitempty"`
+	// LastPeer is the NetBird name of the peer that last used the key.
+	LastPeer string `json:"last_peer,omitempty"`
+}
+
+// ProxyKeyRequest creates a proxy key.
+type ProxyKeyRequest struct {
+	Name string `json:"name"`
+}
+
+// ProxyKeyCreated returns a new proxy key; the key is shown only once.
+type ProxyKeyCreated struct {
+	ProxyKey
+	Header string `json:"header"`
+	Key    string `json:"key"`
 }
 
 // Backend describes a printer backend.

@@ -177,3 +177,29 @@ func TestNetBirdSyncStaleData(t *testing.T) {
 }
 
 func nbUser(id, name string) netbirdapi.User { return netbirdapi.User{ID: id, Name: name} }
+
+func TestNetBirdSyncProxyUser(t *testing.T) {
+	e, _, url := newSyncEnv(t)
+	e.expect(e.do("PUT", "/admin/v1/netbird", e.admin, map[string]string{"api_url": url, "token": "nbp_secret"}), 200)
+	var key api.ProxyKeyCreated
+	e.expect(e.do("POST", "/admin/v1/proxy-keys", e.admin, map[string]string{"name": "proxy"}), 201).decode(t, &key)
+	// The NetBird user with the address has the laptop's role.
+	var me api.PanelMe
+	e.expect(e.panel("GET", "/me", nil, "Host", "print.example.org", "X-Platen-Proxy-Key", key.Key, "X-NetBird-User", "TIM@example.com"), 200).decode(t, &me)
+	if me.Role != "admin" || me.Email != "tim@example.com" || me.Via != "Tim <tim@example.com>" {
+		t.Fatalf("me %+v", me)
+	}
+	e.expect(e.panel("GET", "/me", nil, "Host", "print.example.org", "X-Platen-Proxy-Key", key.Key, "X-NetBird-User", "eve@example.com"), 403)
+
+	// An e-mail panel user gives the NetBird user's devices its role.
+	e.expect(e.do("DELETE", "/admin/v1/panel-users/100.64.0.1", e.admin, nil), 409)
+	now := time.Now()
+	if err := e.store.CreatePanelUser(context.Background(), &store.PanelUser{IP: "tim@example.com", Role: store.PanelAdmin, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	e.expect(e.do("PATCH", "/admin/v1/panel-users/100.64.0.1", e.admin, map[string]string{"role": "viewer"}), 200)
+	e.expect(e.panel("GET", "/me", nil), 200).decode(t, &me)
+	if me.Role != "admin" || me.IP != "127.0.0.1" {
+		t.Fatalf("phone %+v", me)
+	}
+}

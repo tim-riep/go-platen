@@ -570,7 +570,7 @@ paths:
                     items: { $ref: "#/components/schemas/PanelUser" }
     post:
       tags: [admin]
-      summary: Add a web panel user by NetBird IPv4 address
+      summary: Add a web panel user by NetBird IPv4 address or e-mail address
       security: [{ adminToken: [] }]
       requestBody:
         required: true
@@ -586,7 +586,7 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
   /admin/v1/panel-users/{ip}:
     parameters:
-      - { name: ip, in: path, required: true, schema: { type: string } }
+      - { name: ip, in: path, required: true, schema: { type: string }, description: NetBird IPv4 address or e-mail address }
     patch:
       tags: [admin]
       summary: Change name or role of a panel user
@@ -627,6 +627,67 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PanelUser" }
+        "400":
+          description: The user is identified by e-mail address and has no binding
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorBody" }
+
+  /admin/v1/proxy-keys:
+    get:
+      tags: [admin]
+      summary: List the keys of NetBird reverse proxies
+      description: >-
+        A request that carries a proxy key in `X-Platen-Proxy-Key` may name
+        the panel user by e-mail address in `X-NetBird-User`. The panel
+        offers the same under `/panel/v1/proxy-keys`.
+      security: [{ adminToken: [] }]
+      responses:
+        "200":
+          description: Proxy keys, without the keys themselves
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/ProxyKey" }
+    post:
+      tags: [admin]
+      summary: Generate a proxy key
+      security: [{ adminToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+      responses:
+        "201":
+          description: The key; it is returned only now
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/ProxyKey" }
+                  - type: object
+                    properties:
+                      header: { type: string, example: X-Platen-Proxy-Key }
+                      key: { type: string, example: plt_pxy_… }
+  /admin/v1/proxy-keys/{id}:
+    delete:
+      tags: [admin]
+      summary: Delete a proxy key
+      security: [{ adminToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/Error" }
 
   /admin/v1/netbird:
     get:
@@ -1053,9 +1114,11 @@ components:
         version: { type: string, description: Server version }
     PanelUser:
       type: object
-      required: [ip, role, bound, created_at]
+      description: Exactly one of ip and email is set.
+      required: [role, bound, created_at]
       properties:
         ip: { type: string, description: NetBird IPv4 address }
+        email: { type: string, description: E-mail address of a user who comes through a NetBird reverse proxy }
         name: { type: string }
         role: { type: string, enum: [admin, viewer] }
         peer_id: { type: string, description: NetBird peer bound to the address }
@@ -1063,6 +1126,15 @@ components:
         bound: { type: boolean, description: false until the first visit binds the peer }
         created_at: { type: string, format: date-time }
         last_seen: { type: string, format: date-time }
+    ProxyKey:
+      type: object
+      required: [id, name, created_at]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+        last_used: { type: string, format: date-time }
+        last_peer: { type: string, description: NetBird name of the peer that last used the key }
     NetBirdSync:
       type: object
       properties:
@@ -1088,7 +1160,8 @@ components:
     PanelUserRequest:
       type: object
       properties:
-        ip: { type: string, description: Required on create }
+        ip: { type: string, description: On create, ip or email is required }
+        email: { type: string, description: For users who come through a NetBird reverse proxy }
         name: { type: string }
         role: { type: string, enum: [admin, viewer], default: viewer }
     AppClientRequest:

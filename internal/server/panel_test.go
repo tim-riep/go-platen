@@ -202,3 +202,72 @@ func TestPanelDisabled(t *testing.T) {
 	e.expect(e.do("GET", "/", "", nil), 404)
 	e.expect(e.panel("GET", "/me", nil), 404)
 }
+
+func TestPanelProxy(t *testing.T) {
+	e := newPanelEnv(t)
+	ctx := context.Background()
+	now := time.Now()
+	if err := e.store.CreatePanelUser(ctx, &store.PanelUser{IP: "100.64.0.1", Role: store.PanelAdmin, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	var key api.ProxyKeyCreated
+	e.expect(e.do("POST", "/admin/v1/proxy-keys", e.admin, map[string]string{"name": "NetBird proxy"}), 201).decode(t, &key)
+	if key.Header != "X-Platen-Proxy-Key" || !strings.HasPrefix(key.Key, "plt_pxy_") || key.ID == "" {
+		t.Fatalf("key %+v", key)
+	}
+	// The proxy publishes the panel under its own name.
+	proxied := func(user string, extra ...string) []string {
+		return append([]string{"Host", "print.example.org", "X-Platen-Proxy-Key", key.Key, "X-NetBird-User", user}, extra...)
+	}
+
+	r := e.expect(e.panel("GET", "/me", nil, proxied("Ann@Example.com")...), 403)
+	if !strings.Contains(string(r.body), "ann@example.com is not a panel user") {
+		t.Fatalf("body %s", r.body)
+	}
+	var ann api.PanelUser
+	e.expect(e.do("POST", "/admin/v1/panel-users", e.admin, map[string]string{"email": "Ann@Example.com"}), 201).decode(t, &ann)
+	if ann.Email != "ann@example.com" || ann.IP != "" || ann.Role != "viewer" {
+		t.Fatalf("created %+v", ann)
+	}
+	var me api.PanelMe
+	e.expect(e.panel("GET", "/me", nil, proxied("ann@example.com")...), 200).decode(t, &me)
+	if me.Email != "ann@example.com" || me.Role != "viewer" || me.Proxy != "NetBird proxy" || me.FirstAdmin {
+		t.Fatalf("me %+v", me)
+	}
+	e.expect(e.do("GET", "/", "", nil, proxied("ann@example.com")...), 200)
+	e.expect(e.panel("POST", "/workers", map[string]any{"id": "w1"}, proxied("ann@example.com")...), 403)
+
+	// Admins may change things; the origin must be the proxy's name.
+	e.expect(e.do("PATCH", "/admin/v1/panel-users/ann@example.com", e.admin, map[string]string{"role": "admin"}), 200)
+	e.expect(e.panel("POST", "/workers", map[string]any{"id": "w1"}, proxied("ann@example.com", "Origin", "https://evil.example")...), 403)
+	e.expect(e.panel("POST", "/workers", map[string]any{"id": "w1"}, proxied("ann@example.com", "Origin", "https://print.example.org")...), 201)
+	e.expect(e.do("POST", "/admin/v1/panel-users/ann@example.com/reset-peer", e.admin, nil), 400)
+
+	// Without the key the header is ignored: neither the proxy's name nor
+	// the e-mail address get in.
+	e.expect(e.panel("GET", "/me", nil, "Host", "print.example.org", "X-NetBird-User", "ann@example.com"), 403)
+	e.expect(e.do("GET", "/", "", nil, "Host", "print.example.org"), 403)
+	// A wrong key is refused, even with this server's own name.
+	e.expect(e.panel("GET", "/me", nil, "X-Platen-Proxy-Key", "plt_pxy_wrong", "X-NetBird-User", "ann@example.com"), 403)
+	// The proxy must name a user.
+	e.expect(e.panel("GET", "/me", nil, proxied("")...), 403)
+	e.expect(e.panel("GET", "/me", nil, proxied("not an address")...), 403)
+
+	var keys api.List[api.ProxyKey]
+	e.expect(e.do("GET", "/admin/v1/proxy-keys", e.admin, nil), 200).decode(t, &keys)
+	if len(keys.Items) != 1 || keys.Items[0].LastUsed == nil || keys.Items[0].LastPeer != "peer-a.netbird.test" || strings.Contains(string(e.do("GET", "/admin/v1/proxy-keys", e.admin, nil).body), key.Key) {
+		t.Fatalf("keys %+v", keys)
+	}
+	e.expect(e.do("DELETE", "/admin/v1/proxy-keys/"+key.ID, e.admin, nil), 204)
+	e.expect(e.panel("GET", "/me", nil, proxied("ann@example.com")...), 403)
+}
+
+func TestPanelProxyNoFirstAdmin(t *testing.T) {
+	e := newPanelEnv(t)
+	var key api.ProxyKeyCreated
+	e.expect(e.do("POST", "/admin/v1/proxy-keys", e.admin, map[string]string{"name": "proxy"}), 201).decode(t, &key)
+	e.expect(e.panel("GET", "/me", nil, "X-Platen-Proxy-Key", key.Key, "X-NetBird-User", "ann@example.com"), 403)
+	if users, err := e.store.ListPanelUsers(context.Background()); err != nil || len(users) != 0 {
+		t.Fatalf("users %+v %v", users, err)
+	}
+}

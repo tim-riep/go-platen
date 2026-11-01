@@ -5,6 +5,9 @@
 
 const state = { me: null, tab: "overview", timer: null };
 const isAdmin = () => state.me && state.me.role === "admin";
+// A panel user is identified by NetBird IP or, behind a NetBird proxy, by
+// e-mail address.
+const userKey = u => u.email || u.ip;
 
 // ---- helpers ----
 
@@ -436,23 +439,51 @@ function editClient(c, printers) {
 }
 
 async function viewUsers() {
-  const [users, sync] = await Promise.all([api("GET", "/users"), api("GET", "/netbird")]);
+  const [users, sync, keys] = await Promise.all([api("GET", "/users"), api("GET", "/netbird"), api("GET", "/proxy-keys")]);
   return el("div", {},
     head("Panel users", adminButton("Add user", () => editUser(null))),
-    el("p", { class: "muted" }, "Users are identified by their NetBird IPv4 address. Access also requires the NetBird peer that first used the address; reset the binding when a device was re-registered in NetBird."),
-    table(["NetBird IP", "Name", "Role", "Peer", "Last visit", ""], users.items.map(u => el("tr", {},
-      el("td", { class: "mono" }, u.ip, u.ip === state.me.ip ? el("div", { class: "muted" }, "you") : null),
+    el("p", { class: "muted" }, "Users are identified by their NetBird IPv4 address. Access also requires the NetBird peer that first used the address; reset the binding when a device was re-registered in NetBird. Users who open the panel through a NetBird reverse proxy are identified by their e-mail address."),
+    table(["NetBird IP or e-mail", "Name", "Role", "Peer", "Last visit", ""], users.items.map(u => el("tr", {},
+      el("td", { class: "mono" }, userKey(u), userKey(u) === userKey(state.me) ? el("div", { class: "muted" }, "you") : null),
       el("td", {}, u.name || "", u.netbird_user ? el("div", { class: "muted" }, u.netbird_user) : null),
       el("td", {}, pill(u.role, u.role === "admin" ? "ok" : "neutral")),
-      el("td", {}, u.bound ? el("span", { class: "mono" }, u.peer_fqdn || u.peer_id) : pill("bound on first visit", "warn")),
+      el("td", {}, u.email ? el("span", { class: "muted" }, "through a NetBird proxy") : u.bound ? el("span", { class: "mono" }, u.peer_fqdn || u.peer_id) : pill("bound on first visit", "warn")),
       el("td", {}, fmtTime(u.last_seen)),
       el("td", { class: "actions" },
         adminButton("Edit", () => editUser(u), "link"),
         u.bound ? adminButton("Reset peer", () => confirmAction("Reset peer binding", "The next visit from " + u.ip + " binds the NetBird peer again.", "Reset",
           () => api("POST", "/users/" + encodeURIComponent(u.ip) + "/reset-peer")), "link") : null,
-        adminButton("Remove", () => confirmAction("Remove user", "Remove " + u.ip + " from the panel?", "Remove",
-          () => api("DELETE", "/users/" + encodeURIComponent(u.ip))), "link")))), "No users."),
+        adminButton("Remove", () => confirmAction("Remove user", "Remove " + userKey(u) + " from the panel?", "Remove",
+          () => api("DELETE", "/users/" + encodeURIComponent(userKey(u)))), "link")))), "No users."),
+    proxySection(keys),
     netbirdSection(sync));
+}
+
+// proxySection lists the keys of NetBird reverse proxies. A proxy that
+// sends a key in its header may name the user by e-mail address.
+function proxySection(keys) {
+  return el("div", {},
+    el("div", { class: "head", style: "margin-top: 28px" },
+      el("h2", {}, "NetBird proxies"),
+      el("div", { class: "toolbar" }, adminButton("Generate key", () => editProxyKey(), "secondary"))),
+    el("p", { class: "muted" }, "A NetBird reverse proxy names the signed-in user in the X-NetBird-User header. platen trusts that header only from a proxy that also sends a key generated here, so set the key up as a header in the proxy service."),
+    table(["Proxy", "Created", "Last used", ""], keys.items.map(k => el("tr", {},
+      el("td", {}, el("strong", {}, k.name), el("div", { class: "muted mono" }, k.id)),
+      el("td", {}, fmtTime(k.created_at)),
+      el("td", {}, fmtTime(k.last_used), k.last_peer ? el("div", { class: "muted mono" }, k.last_peer) : null),
+      el("td", { class: "actions" },
+        adminButton("Delete", () => confirmAction("Delete proxy key", "Delete the key of " + k.name + "? Users of this proxy lose access.", "Delete",
+          () => api("DELETE", "/proxy-keys/" + encodeURIComponent(k.id))), "link")))), "No proxy keys."));
+}
+
+function editProxyKey() {
+  openDialog("Generate proxy key", [
+    { name: "name", label: "Name", required: true, placeholder: "NetBird proxy" },
+  ], async v => {
+    const r = await api("POST", "/proxy-keys", { name: v.name });
+    render();
+    return () => showSecret("Key for " + r.name, "Add this header to the requests the NetBird proxy forwards to platen. The key is shown only now.", r.header + ": " + r.key);
+  }, "Generate");
 }
 
 // netbirdSection shows the NetBird user sync: with a NetBird API token, all
@@ -500,13 +531,15 @@ function editNetBird(st) {
 function editUser(u) {
   const isNew = !u;
   u = u || { role: "viewer" };
-  openDialog(isNew ? "Add panel user" : "Edit " + u.ip, [
-    { name: "ip", label: "NetBird IPv4 address", value: u.ip, required: isNew, readonly: !isNew, placeholder: "100.64.0.12", hint: isNew ? "The peer behind the address is bound on its first visit." : "" },
+  openDialog(isNew ? "Add panel user" : "Edit " + userKey(u), [
+    { name: "ip", label: "NetBird IPv4 address or e-mail address", value: isNew ? "" : userKey(u), required: isNew, readonly: !isNew, placeholder: "100.64.0.12",
+      hint: isNew ? "The peer behind an IP address is bound on its first visit. An e-mail address is for users who come through a NetBird proxy." : "" },
     { name: "name", label: "Name", value: u.name },
     { name: "role", label: "Role", type: "select", value: u.role, options: [["viewer", "Viewer (read only)"], ["admin", "Admin"]] },
   ], async v => {
-    if (isNew) await api("POST", "/users", { ip: v.ip, name: v.name, role: v.role });
-    else await api("PATCH", "/users/" + encodeURIComponent(u.ip), { name: v.name, role: v.role });
+    const id = v.ip.trim();
+    if (isNew) await api("POST", "/users", Object.assign(id.includes("@") ? { email: id } : { ip: id }, { name: v.name, role: v.role }));
+    else await api("PATCH", "/users/" + encodeURIComponent(userKey(u)), { name: v.name, role: v.role });
     render();
   });
 }
@@ -555,8 +588,9 @@ async function start() {
     return;
   }
   const me = document.getElementById("me");
-  me.append(el("strong", {}, state.me.name || state.me.peer_fqdn || state.me.ip), " · ", state.me.role,
-    state.me.via ? " via " + state.me.via : "", el("div", { class: "mono" }, state.me.ip + " · platen " + state.me.version));
+  me.append(el("strong", {}, state.me.name || state.me.peer_fqdn || userKey(state.me)), " · ", state.me.role,
+    state.me.via ? " via " + state.me.via : "",
+    el("div", { class: "mono" }, userKey(state.me) + (state.me.proxy ? " · proxy " + state.me.proxy : "") + " · platen " + state.me.version));
   if (state.me.first_admin) {
     notice("You are the first user of this panel and became its admin. Add further users under Panel users; they are identified by their NetBird IPv4 address.");
   }

@@ -6,6 +6,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -207,6 +208,10 @@ const (
 // NetBird IPv4 address; access also requires the NetBird peer (WireGuard
 // public key) bound to that address. An empty PeerID is bound on the
 // user's first visit.
+//
+// Users who open the panel through a NetBird reverse proxy are identified
+// by their e-mail address instead, which is stored in IP in lower case;
+// they have no peer binding.
 type PanelUser struct {
 	IP        string
 	PeerID    string
@@ -216,6 +221,21 @@ type PanelUser struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	LastSeen  *time.Time
+}
+
+// IsEmail reports whether the user is identified by e-mail address.
+func (u *PanelUser) IsEmail() bool { return strings.Contains(u.IP, "@") }
+
+// ProxyKey lets a NetBird reverse proxy name the panel user it forwards a
+// request for. Only the hash of the key is stored.
+type ProxyKey struct {
+	ID        string
+	Name      string
+	Hash      string
+	CreatedAt time.Time
+	LastUsed  *time.Time
+	// LastPeer is the NetBird name of the peer that last used the key.
+	LastPeer string
 }
 
 // PrinterFilter restricts ListPrinters. Zero values match everything.
@@ -334,6 +354,12 @@ type Store interface {
 	// DeletePanelUser returns ErrConflict if no admin would be left.
 	DeletePanelUser(ctx context.Context, ip string) error
 	TouchPanelUser(ctx context.Context, ip string, at time.Time) error
+
+	ListProxyKeys(ctx context.Context) ([]ProxyKey, error)
+	CreateProxyKey(ctx context.Context, k *ProxyKey) error
+	GetProxyKeyByHash(ctx context.Context, hash string) (*ProxyKey, error)
+	DeleteProxyKey(ctx context.Context, id string) error
+	TouchProxyKey(ctx context.Context, id string, at time.Time, peer string) error
 
 	// GetSetting returns ErrNotFound for a setting that is not set.
 	GetSetting(ctx context.Context, key string) (string, error)
